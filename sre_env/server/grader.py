@@ -49,6 +49,9 @@ class Penalty:
 NOOP_PENALTY_NAME = "noop"
 NOOP_PENALTY_AMOUNT = 0.02
 
+INVALID_CMD_PENALTY_NAME = "invalid_command"
+INVALID_CMD_PENALTY_AMOUNT = 0.01
+
 
 class TaskGrader:
     """Deterministic scoring engine for a task.
@@ -113,10 +116,14 @@ class TaskGrader:
         else:
             self.consecutive_noop_count = 0
 
-        # 4. Update previous command
+        # 4. Invalid command detection
+        if "invalid usage" in output.lower() or "command not found" in output.lower():
+            self.penalties_applied.append(INVALID_CMD_PENALTY_NAME)
+
+        # 5. Update previous command
         self.prev_command = command
 
-        # 5. Return clamped score
+        # 6. Return clamped score
         return self.current_score()
 
     def current_score(self) -> float:
@@ -134,6 +141,8 @@ class TaskGrader:
         for name in self.penalties_applied:
             if name == NOOP_PENALTY_NAME:
                 total_penalty += NOOP_PENALTY_AMOUNT
+            elif name == INVALID_CMD_PENALTY_NAME:
+                total_penalty += INVALID_CMD_PENALTY_AMOUNT
             elif name in penalty_amounts:
                 total_penalty += penalty_amounts[name]
 

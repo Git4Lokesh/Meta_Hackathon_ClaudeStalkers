@@ -62,8 +62,13 @@ class CommandParser:
                     i += 1
                 # Check if next token is a value for this flag
                 elif i + 1 < len(tokens) and not tokens[i + 1].startswith("-"):
-                    flags[token] = tokens[i + 1]
-                    i += 2
+                    # Known boolean flags that shouldn't consume values
+                    if token in ("-i", "-v", "-f", "-r"):
+                        flags[token] = None
+                        i += 1
+                    else:
+                        flags[token] = tokens[i + 1]
+                        i += 2
                 else:
                     flags[token] = None
                     i += 1
@@ -139,12 +144,21 @@ class CommandParser:
             content = system.filesystem.read_file(path)
         except ValueError:
             return f"No such file or directory: {path}"
+            
+        ignore_case = "-i" in parsed.flags
+        invert_match = "-v" in parsed.flags
+        
         try:
-            regex = re.compile(pattern)
+            regex_flags = re.IGNORECASE if ignore_case else 0
+            regex = re.compile(pattern, flags=regex_flags)
         except re.error:
             return f"grep: invalid regular expression: '{pattern}'"
+            
         lines = content.splitlines()
-        matches = [line for line in lines if regex.search(line)]
+        if invert_match:
+            matches = [line for line in lines if not regex.search(line)]
+        else:
+            matches = [line for line in lines if regex.search(line)]
         return "\n".join(matches)
 
     def _exec_tail(self, parsed: ParsedCommand, system: SimulatedSystem) -> str:
