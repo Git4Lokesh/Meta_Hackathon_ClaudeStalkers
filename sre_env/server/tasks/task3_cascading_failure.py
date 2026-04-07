@@ -170,8 +170,32 @@ class CascadingFailureTask(TaskDefinitionBase):
             "Jan 15 09:46:00 server app_server[2000]: WARN: database connection unavailable",
             "Jan 15 09:50:00 server load_balancer[3000]: WARN: backend health check failing",
             "Jan 15 09:55:00 server cron[500]: (root) CMD (/usr/bin/logrotate /etc/logrotate.conf)",
+            "Jan 15 09:48:00 server redis[4000]: WARN: Memory usage above 70% threshold",
+            "Jan 15 09:49:00 server monitoring[5000]: WARN: High CPU detected on app_server",
+            "Jan 15 09:51:00 server monitoring[5000]: WARN: Redis memory usage above threshold",
         ]
         system.filesystem.write_file("/var/log/syslog", "\n".join(syslog_lines) + "\n")
+
+        # Redis red herring logs
+        redis_log = [
+            "2024-01-15 09:40:00 INFO  [main] Redis server started on port 6379",
+            "2024-01-15 09:48:00 WARN  [memory] Memory usage above 70% threshold (5734MB/8192MB)",
+            "2024-01-15 09:50:00 WARN  [memory] Consider increasing maxmemory or enabling eviction",
+            "2024-01-15 09:52:00 INFO  [keyspace] DB 0: 15234 keys, 0 expires",
+            "2024-01-15 09:55:00 WARN  [memory] Memory usage at 72% - approaching limit",
+        ]
+        system.filesystem.write_file("/var/log/redis/redis.log", "\n".join(redis_log) + "\n")
+
+        # Monitoring alert log
+        monitoring_log = [
+            "2024-01-15 09:40:00 INFO  [main] Monitoring service started",
+            "2024-01-15 09:45:00 WARN  [alert] High CPU detected on app_server (85%)",
+            "2024-01-15 09:46:00 WARN  [alert] app_server response time > 5000ms",
+            "2024-01-15 09:48:00 WARN  [alert] Redis memory usage above threshold",
+            "2024-01-15 09:50:00 ERROR [alert] Multiple services degraded - possible cascading failure",
+            "2024-01-15 09:55:00 WARN  [alert] db_connector health check timeout",
+        ]
+        system.filesystem.write_file("/var/log/monitoring/alerts.log", "\n".join(monitoring_log) + "\n")
 
         # ---- Config validator for db_connector ----
         def db_connector_validator(sys: SimulatedSystem) -> bool:
@@ -247,6 +271,35 @@ class CascadingFailureTask(TaskDefinitionBase):
             timestamp=fail_t + timedelta(minutes=5), severity="ERROR", source="load_balancer",
             message="no healthy backends available, returning 503",
         )
+
+        # Redis red herring log entries
+        system.log_buffer.append(
+            timestamp=fail_t + timedelta(minutes=3), severity="WARN", source="redis",
+            message="Memory usage above 70% threshold (5734MB/8192MB)",
+        )
+        system.log_buffer.append(
+            timestamp=fail_t + timedelta(minutes=4), severity="WARN", source="redis",
+            message="Consider increasing maxmemory or enabling eviction",
+        )
+        system.log_buffer.append(
+            timestamp=fail_t + timedelta(minutes=6), severity="WARN", source="redis",
+            message="Memory usage at 72% - approaching limit",
+        )
+
+        # Monitoring alert log entries
+        system.log_buffer.append(
+            timestamp=fail_t + timedelta(seconds=20), severity="WARN", source="monitoring",
+            message="High CPU detected on app_server (85%)",
+        )
+        system.log_buffer.append(
+            timestamp=fail_t + timedelta(minutes=3, seconds=30), severity="WARN", source="monitoring",
+            message="Redis memory usage above threshold",
+        )
+        system.log_buffer.append(
+            timestamp=fail_t + timedelta(minutes=5, seconds=10), severity="ERROR", source="monitoring",
+            message="Multiple services degraded - possible cascading failure",
+        )
+
         # Extra normal entries
         for i in range(10):
             svc = rng.choice(services_for_logs)

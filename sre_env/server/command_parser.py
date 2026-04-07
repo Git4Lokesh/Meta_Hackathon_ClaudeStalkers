@@ -22,7 +22,7 @@ class CommandParser:
     SUPPORTED_COMMANDS = [
         "cat", "grep", "tail", "head", "ls", "ps", "top",
         "kill", "systemctl", "curl", "df", "free", "netstat",
-        "edit", "echo", "help",
+        "edit", "echo", "help", "journalctl", "dmesg",
     ]
 
     # -----------------------------------------------------------------
@@ -264,6 +264,52 @@ class CommandParser:
     def _exec_echo(self, parsed: ParsedCommand, system: SimulatedSystem) -> str:
         return " ".join(parsed.args)
 
+    def _exec_journalctl(self, parsed: ParsedCommand, system: SimulatedSystem) -> str:
+        """journalctl [-u service] [-n N] [--since "time"]"""
+        service = parsed.flags.get("-u")
+        n = 20  # default lines
+        if "-n" in parsed.flags and parsed.flags["-n"] is not None:
+            try:
+                n = int(parsed.flags["-n"])
+            except ValueError:
+                pass
+
+        if service:
+            entries = system.log_buffer.tail(n, source=service)
+        else:
+            entries = system.log_buffer.tail(n)
+
+        if not entries:
+            return "-- No entries --"
+
+        lines = []
+        for e in entries:
+            lines.append(
+                f"{e.timestamp.strftime('%b %d %H:%M:%S')} {e.source}"
+                f"[{hash(e.source) % 10000}]: {e.severity} {e.message}"
+            )
+        return "\n".join(lines)
+
+    def _exec_dmesg(self, parsed: ParsedCommand, system: SimulatedSystem) -> str:
+        """Show kernel-level messages (simulated)."""
+        entries = system.log_buffer.query(severity="ERROR") + system.log_buffer.query(severity="FATAL")
+        entries.sort(key=lambda e: e.timestamp)
+
+        if "-T" in parsed.flags:
+            lines = [
+                f"[{e.timestamp.strftime('%a %b %d %H:%M:%S %Y')}] {e.source}: {e.message}"
+                for e in entries[-30:]
+            ]
+        else:
+            lines = [
+                f"[{(e.timestamp.timestamp() % 100000):.6f}] {e.source}: {e.message}"
+                for e in entries[-30:]
+            ]
+
+        if not lines:
+            return "-- No kernel messages --"
+        return "\n".join(lines)
+
     def _exec_help(self, parsed: ParsedCommand, system: SimulatedSystem) -> str:
         return (
             "Available commands:\n"
@@ -282,6 +328,8 @@ class CommandParser:
             "  netstat                 - Show listening ports\n"
             "  edit <path> <old> <new> - Edit file content\n"
             "  echo <text>             - Print text\n"
+            "  journalctl [-u svc] [-n N] - Show journal logs\n"
+            "  dmesg [-T]              - Show kernel messages (errors/fatals)\n"
             "  help                    - Show this help message"
         )
 

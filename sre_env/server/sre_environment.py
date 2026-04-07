@@ -263,8 +263,12 @@ class SREEnvironment:
     def _terminal_metadata(self) -> dict:
         """Build terminal metadata with score, milestones, penalties."""
         result = self._grader.result(done=True)
+        efficiency = 1.0 - (self._state.step_count / self._max_steps) if self._max_steps > 0 else 0.0
         return {
             "score": result.score,
             "milestones_achieved": result.milestones_achieved,
             "penalties_applied": result.penalties_applied,
+            "steps_used": self._state.step_count,
+            "max_steps": self._max_steps,
+            "efficiency_ratio": round(efficiency, 2),
         }

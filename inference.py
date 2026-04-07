@@ -46,7 +46,7 @@ SRE_SYSTEM_PROMPT = textwrap.dedent("""
     3. Fix the problem
     4. Verify the fix
 
-    Available commands: cat, grep, tail, head, ls, ps, top, kill, systemctl, curl, df, free, netstat, edit, echo, help
+    Available commands: cat, grep, tail, head, ls, ps, top, kill, systemctl, curl, df, free, netstat, edit, echo, journalctl, dmesg, help
 
     IMPORTANT: Respond with ONLY a single Linux command. No explanations, no markdown, no code blocks. Just the command.
 
@@ -59,6 +59,47 @@ SRE_SYSTEM_PROMPT = textwrap.dedent("""
     curl http://localhost:80/health
     edit /etc/app/config.yml "old_value" "new_value"
 """).strip()
+
+TASK_PROMPTS = {
+    "task1": """You are an expert SRE diagnosing a production incident. A web service has gone down.
+
+Follow this diagnostic workflow:
+1. First check service status: systemctl status nginx
+2. Read error logs: cat /var/log/nginx/error.log
+3. Fix the issue: systemctl restart nginx
+4. Verify the fix: curl http://localhost:80/health
+
+Respond with ONLY a single Linux command. No explanations.""",
+
+    "task2": """You are an expert SRE diagnosing a memory leak incident.
+
+Follow this diagnostic workflow:
+1. Check memory usage: free
+2. Identify high-memory processes: ps aux
+3. Read OOM logs: cat /var/log/syslog
+4. Kill the leaking process: kill -9 <PID> (the one using 2500+ MB)
+5. Restart the affected service: systemctl restart data_processor
+6. Verify: curl http://localhost:8081/health
+
+The leaking process will be the one with memory_mb > 2000. Respond with ONLY a single Linux command.""",
+
+    "task3": """You are an expert SRE diagnosing a cascading failure across multiple services.
+
+Follow this diagnostic workflow:
+1. Read load balancer logs: cat /var/log/load_balancer/lb.log
+2. Read app server logs: cat /var/log/app_server/app.log
+3. Read DB connector logs: cat /var/log/db_connector/connector.log
+4. Read the database config: cat /etc/app/database.yml
+5. Fix the password: edit /etc/app/database.yml "wrong_password_123" "correct_db_pass_456"
+6. Restart in dependency order:
+   - systemctl restart db_connector
+   - systemctl restart app_server
+   - systemctl restart load_balancer
+7. Verify: curl http://localhost:80/health
+
+IMPORTANT: Restart services in dependency order. DB connector first, then app server, then load balancer.
+Respond with ONLY a single Linux command.""",
+}
 
 
 # ---- Structured logging ----
@@ -89,7 +130,7 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> No
 KNOWN_COMMANDS = [
     "cat", "grep", "tail", "head", "ls", "ps", "top",
     "kill", "systemctl", "curl", "df", "free", "netstat",
-    "edit", "echo", "help",
+    "edit", "echo", "help", "journalctl", "dmesg",
 ]
 
 
@@ -153,8 +194,9 @@ def run_task(client: OpenAI, env_client: SREClient, task_config: dict) -> dict:
     try:
         obs = env_client.reset(task_id=task_id, seed=SEED)
 
+        system_prompt = TASK_PROMPTS.get(task_id, SRE_SYSTEM_PROMPT)
         messages = [
-            {"role": "system", "content": SRE_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"You are investigating a production incident.\n\n{obs.output}\n\nWhat command do you want to run?"},
         ]
 

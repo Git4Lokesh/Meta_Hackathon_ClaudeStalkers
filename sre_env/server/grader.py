@@ -77,6 +77,7 @@ class TaskGrader:
         self.penalties_applied: list[str] = []
         self.prev_command: Optional[str] = None
         self.consecutive_noop_count: int = 0
+        self.steps_taken: int = 0
 
     # ------------------------------------------------------------------
     # Public API
@@ -98,6 +99,9 @@ class TaskGrader:
         4. Update ``prev_command``.
         5. Return cumulative score clamped to [0.0, 1.0].
         """
+        # Track steps
+        self.steps_taken += 1
+
         # 1. Milestones
         for milestone in self.milestones:
             if milestone.name not in self.achieved:
