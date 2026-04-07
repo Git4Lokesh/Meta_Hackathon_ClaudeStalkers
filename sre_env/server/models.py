@@ -401,3 +401,6 @@ class GraderResult(BaseModel):
     milestones_achieved: List[str]
     penalties_applied: List[str]
     done: bool
+    fatal_action_triggered: bool = False
+    health_score: float = 1.0
+    step_penalties: int = 0

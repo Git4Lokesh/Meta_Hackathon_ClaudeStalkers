@@ -10,7 +10,7 @@ from __future__ import annotations
 import random
 from datetime import datetime, timedelta
 
-from sre_env.server.grader import Milestone, Penalty, TaskGrader
+from sre_env.server.grader import Milestone, Penalty, StateCheck, FatalAction, TaskGrader
 from sre_env.server.models import MetricPoint, ServiceRecord
 from sre_env.server.simulated_system import SimulatedSystem
 from sre_env.server.tasks.base import TaskDefinitionBase
@@ -251,7 +251,7 @@ SwapFree:         512000 kB
             ),
             Milestone(
                 name="identify_process",
-                credit=0.20,
+                credit=0.15,
                 description="Agent identifies the high-memory process",
                 check=lambda cmd, sys, out: (
                     "ps aux" in cmd or "top" in cmd
@@ -259,7 +259,7 @@ SwapFree:         512000 kB
             ),
             Milestone(
                 name="read_oom_logs",
-                credit=0.15,
+                credit=0.10,
                 description="Agent reads OOM killer logs",
                 check=lambda cmd, sys, out: (
                     any(k in cmd for k in ("cat", "tail", "grep"))
@@ -269,7 +269,7 @@ SwapFree:         512000 kB
             ),
             Milestone(
                 name="kill_process",
-                credit=0.25,
+                credit=0.20,
                 description="Agent kills the leaking process",
                 check=lambda cmd, sys, out: (
                     sys.process_table.processes.get(leaking_pid) is None
@@ -278,7 +278,7 @@ SwapFree:         512000 kB
             ),
             Milestone(
                 name="restart_service",
-                credit=0.20,
+                credit=0.15,
                 description="Agent restarts the data_processor service",
                 check=lambda cmd, sys, out: (
                     sys.service_registry.services.get("data_processor") is not None
@@ -300,6 +300,27 @@ SwapFree:         512000 kB
             ),
         ]
 
+        # State-based verification: memory should be under control + service running
+        state_checks = [
+            StateCheck(
+                name="memory_under_control",
+                credit=0.10,
+                description="Total system memory usage is below 2048 MB",
+                check=lambda sys: (
+                    sum(p.memory_mb for p in sys.process_table.processes.values()) < 2048.0
+                ),
+            ),
+            StateCheck(
+                name="data_processor_healthy",
+                credit=0.10,
+                description="data_processor service is running (state-based)",
+                check=lambda sys: (
+                    sys.service_registry.services.get("data_processor") is not None
+                    and sys.service_registry.services["data_processor"].status == "running"
+                ),
+            ),
+        ]
+
         penalties = [
             Penalty(
                 name="kill_wrong_process",
@@ -316,4 +337,79 @@ SwapFree:         512000 kB
             ),
         ]
 
-        return TaskGrader(milestones=milestones, penalties=penalties)
+        # Fatal actions: killing healthy critical services
+        fatal_actions = [
+            FatalAction(
+                name="killed_postgres",
+                description="Killed the healthy postgres database",
+                check=lambda cmd, sys, out: (
+                    "kill" in cmd
+                    and "No such process" not in out
+                    and _killed_service_process(cmd, sys, "postgres")
+                ),
+            ),
+            FatalAction(
+                name="killed_redis",
+                description="Killed the healthy redis service",
+                check=lambda cmd, sys, out: (
+                    "kill" in cmd
+                    and "No such process" not in out
+                    and _killed_service_process(cmd, sys, "redis")
+                ),
+            ),
+            FatalAction(
+                name="killed_nginx",
+                description="Killed the healthy nginx service",
+                check=lambda cmd, sys, out: (
+                    "kill" in cmd
+                    and "No such process" not in out
+                    and _killed_service_process(cmd, sys, "nginx")
+                ),
+            ),
+            FatalAction(
+                name="stopped_critical_service",
+                description="Stopped a healthy critical service",
+                check=lambda cmd, sys, out: (
+                    "systemctl stop" in cmd
+                    and any(
+                        svc in cmd
+                        for svc in ("postgres", "redis", "nginx")
+                    )
+                ),
+            ),
+        ]
+
+        # Health function: services + memory
+        def health_fn(sys: SimulatedSystem) -> float:
+            services = sys.service_registry.services
+            if not services:
+                return 1.0
+            running = sum(1 for s in services.values() if s.status == "running")
+            svc_health = running / len(services)
+            # Memory component: penalise if total mem > 4GB
+            total_mem = sum(p.memory_mb for p in sys.process_table.processes.values())
+            mem_health = max(0.0, 1.0 - max(0.0, total_mem - 2048.0) / 4096.0)
+            return (svc_health + mem_health) / 2.0
+
+        return TaskGrader(
+            milestones=milestones,
+            penalties=penalties,
+            state_checks=state_checks,
+            fatal_actions=fatal_actions,
+            health_fn=health_fn,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _killed_service_process(cmd: str, sys: SimulatedSystem, service_name: str) -> bool:
+    """Check if a kill command resulted in the given service's process being killed."""
+    svc = sys.service_registry.services.get(service_name)
+    if svc is None:
+        return False
+    proc = sys.process_table.get_by_service(service_name)
+    if proc is None and svc.status in ("crashed",):
+        return True
+    return False
