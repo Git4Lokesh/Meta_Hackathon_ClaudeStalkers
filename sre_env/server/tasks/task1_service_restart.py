@@ -9,7 +9,7 @@ from __future__ import annotations
 import random
 from datetime import datetime, timedelta
 
-from sre_env.server.grader import Milestone, Penalty, TaskGrader
+from sre_env.server.grader import Milestone, Penalty, StateCheck, FatalAction, TaskGrader
 from sre_env.server.models import MetricPoint
 from sre_env.server.simulated_system import SimulatedSystem
 from sre_env.server.tasks.base import TaskDefinitionBase
@@ -287,13 +287,13 @@ SwapFree:        2048000 kB
             ),
             Milestone(
                 name="check_service_status",
-                credit=0.25,
+                credit=0.20,
                 description="Agent checks nginx service status",
                 check=lambda cmd, sys, out: cmd.strip() == "systemctl status nginx",
             ),
             Milestone(
                 name="restart_nginx",
-                credit=0.50,
+                credit=0.40,
                 description="Agent restarts nginx successfully",
                 check=lambda cmd, sys, out: (
                     sys.service_registry.services.get("nginx") is not None
@@ -314,12 +314,100 @@ SwapFree:        2048000 kB
                 ),
             ),
         ]
-        return TaskGrader(milestones=milestones, penalties=[])
+
+        # State-based verification: nginx must actually be running
+        state_checks = [
+            StateCheck(
+                name="nginx_healthy",
+                credit=0.15,
+                description="nginx service is running (state-based)",
+                check=lambda sys: (
+                    sys.service_registry.services.get("nginx") is not None
+                    and sys.service_registry.services["nginx"].status == "running"
+                ),
+            ),
+        ]
+
+        # Fatal actions: killing healthy critical services
+        fatal_actions = [
+            FatalAction(
+                name="killed_postgres",
+                description="Killed the healthy postgres database",
+                check=lambda cmd, sys, out: (
+                    "kill" in cmd
+                    and "No such process" not in out
+                    and _killed_service_process(cmd, sys, "postgres")
+                ),
+            ),
+            FatalAction(
+                name="killed_redis",
+                description="Killed the healthy redis service",
+                check=lambda cmd, sys, out: (
+                    "kill" in cmd
+                    and "No such process" not in out
+                    and _killed_service_process(cmd, sys, "redis")
+                ),
+            ),
+            FatalAction(
+                name="killed_app_server",
+                description="Killed the healthy app_server",
+                check=lambda cmd, sys, out: (
+                    "kill" in cmd
+                    and "No such process" not in out
+                    and _killed_service_process(cmd, sys, "app_server")
+                ),
+            ),
+            FatalAction(
+                name="stopped_critical_service",
+                description="Stopped a healthy critical service",
+                check=lambda cmd, sys, out: (
+                    "systemctl stop" in cmd
+                    and any(
+                        svc in cmd
+                        for svc in ("postgres", "redis", "app_server")
+                    )
+                ),
+            ),
+        ]
+
+        # Health function: fraction of services running
+        def health_fn(sys: SimulatedSystem) -> float:
+            services = sys.service_registry.services
+            if not services:
+                return 1.0
+            running = sum(1 for s in services.values() if s.status == "running")
+            return running / len(services)
+
+        return TaskGrader(
+            milestones=milestones,
+            penalties=[],
+            state_checks=state_checks,
+            fatal_actions=fatal_actions,
+            health_fn=health_fn,
+        )
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _killed_service_process(cmd: str, sys: SimulatedSystem, service_name: str) -> bool:
+    """Check if a kill command resulted in the given service's process being killed.
+
+    After execution, if the service no longer has a running process, the kill
+    was targeting it.  We verify by checking that the service's process entry
+    is gone from the process table AND the kill output didn't say 'No such process'.
+    """
+    svc = sys.service_registry.services.get(service_name)
+    if svc is None:
+        return False
+    # If the service had a PID and now the process is gone, it was killed
+    proc = sys.process_table.get_by_service(service_name)
+    if proc is None and svc.status in ("crashed",):
+        # Service lost its process — likely killed
+        return True
+    return False
+
 
 def _svc(name: str, status: str, port: int, deps: list[str]):
     from sre_env.server.models import ServiceRecord

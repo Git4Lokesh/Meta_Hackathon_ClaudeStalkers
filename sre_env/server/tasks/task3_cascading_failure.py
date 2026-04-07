@@ -10,7 +10,7 @@ from __future__ import annotations
 import random
 from datetime import datetime, timedelta
 
-from sre_env.server.grader import Milestone, Penalty, TaskGrader
+from sre_env.server.grader import Milestone, Penalty, StateCheck, FatalAction, TaskGrader
 from sre_env.server.models import MetricPoint, ServiceRecord
 from sre_env.server.simulated_system import SimulatedSystem
 from sre_env.server.tasks.base import TaskDefinitionBase
@@ -304,7 +304,7 @@ class CascadingFailureTask(TaskDefinitionBase):
             ),
             Milestone(
                 name="read_app_logs",
-                credit=0.10,
+                credit=0.05,
                 description="Agent reads app_server logs",
                 check=lambda cmd, sys, out: (
                     any(k in cmd for k in ("cat", "tail", "grep"))
@@ -322,7 +322,7 @@ class CascadingFailureTask(TaskDefinitionBase):
             ),
             Milestone(
                 name="read_config",
-                credit=0.15,
+                credit=0.10,
                 description="Agent reads the database config",
                 check=lambda cmd, sys, out: (
                     any(k in cmd for k in ("cat", "grep"))
@@ -331,7 +331,7 @@ class CascadingFailureTask(TaskDefinitionBase):
             ),
             Milestone(
                 name="fix_config",
-                credit=0.20,
+                credit=0.15,
                 description="Agent fixes the database password",
                 check=lambda cmd, sys, out: (
                     _config_has_correct_password(sys)
@@ -367,12 +367,28 @@ class CascadingFailureTask(TaskDefinitionBase):
             ),
             Milestone(
                 name="verify_all",
-                credit=0.10,
+                credit=0.05,
                 description="Agent verifies all services are running",
                 check=lambda cmd, sys, out: (
                     _all_three_running(sys)
                     and ("curl" in cmd or "systemctl status" in cmd)
                 ),
+            ),
+        ]
+
+        # State-based verification: all cascade services running + correct config
+        state_checks = [
+            StateCheck(
+                name="cascade_resolved",
+                credit=0.10,
+                description="All three cascade services are running (state-based)",
+                check=lambda sys: _all_three_running(sys),
+            ),
+            StateCheck(
+                name="config_correct",
+                credit=0.10,
+                description="Database config has correct password (state-based)",
+                check=lambda sys: _config_has_correct_password(sys),
             ),
         ]
 
@@ -388,7 +404,63 @@ class CascadingFailureTask(TaskDefinitionBase):
             ),
         ]
 
-        return TaskGrader(milestones=milestones, penalties=penalties)
+        # Fatal actions
+        fatal_actions = [
+            FatalAction(
+                name="killed_postgres",
+                description="Killed the running postgres database — the root dependency",
+                check=lambda cmd, sys, out: (
+                    "kill" in cmd
+                    and "No such process" not in out
+                    and _killed_service_process(cmd, sys, "postgres")
+                ),
+            ),
+            FatalAction(
+                name="stopped_postgres",
+                description="Stopped the running postgres database",
+                check=lambda cmd, sys, out: (
+                    "systemctl stop" in cmd
+                    and "postgres" in cmd
+                ),
+            ),
+            FatalAction(
+                name="corrupted_config",
+                description="Replaced database.yml config with invalid content",
+                check=lambda cmd, sys, out: (
+                    "edit" in cmd
+                    and "database.yml" in cmd
+                    and _config_is_corrupted(sys)
+                ),
+            ),
+            FatalAction(
+                name="killed_redis",
+                description="Killed the healthy redis service",
+                check=lambda cmd, sys, out: (
+                    "kill" in cmd
+                    and "No such process" not in out
+                    and _killed_service_process(cmd, sys, "redis")
+                ),
+            ),
+        ]
+
+        # Health function: cascade services + config correctness
+        def health_fn(sys: SimulatedSystem) -> float:
+            services = sys.service_registry.services
+            if not services:
+                return 1.0
+            running = sum(1 for s in services.values() if s.status == "running")
+            svc_health = running / len(services)
+            config_ok = 1.0 if _config_has_correct_password(sys) else 0.0
+            # Weight: 70% services, 30% config
+            return svc_health * 0.7 + config_ok * 0.3
+
+        return TaskGrader(
+            milestones=milestones,
+            penalties=penalties,
+            state_checks=state_checks,
+            fatal_actions=fatal_actions,
+            health_fn=health_fn,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -403,6 +475,17 @@ def _config_has_correct_password(sys: SimulatedSystem) -> bool:
         return False
 
 
+def _config_is_corrupted(sys: SimulatedSystem) -> bool:
+    """Check if the database.yml has been corrupted (missing required keys)."""
+    try:
+        content = sys.filesystem.read_file("/etc/app/database.yml")
+        # Must still contain basic structure
+        required = ["host:", "port:", "user:", "password:", "dbname:"]
+        return not all(key in content for key in required)
+    except ValueError:
+        return True  # File deleted = corrupted
+
+
 def _all_three_running(sys: SimulatedSystem) -> bool:
     for name in ("db_connector", "app_server", "load_balancer"):
         svc = sys.service_registry.services.get(name)
@@ -414,20 +497,22 @@ def _all_three_running(sys: SimulatedSystem) -> bool:
 def _restarted_with_unmet_deps(cmd: str, sys: SimulatedSystem) -> bool:
     """Check if the restart command targeted a service with unmet deps."""
     parts = cmd.strip().split()
-    # Expected: systemctl restart <service_name>
     if len(parts) < 3:
         return False
     svc_name = parts[2]
-    # Check if the service had unmet deps *before* the restart executed.
-    # Since the grader runs after execution, we check if the restart failed
-    # (service is not running) which indicates unmet deps.
     svc = sys.service_registry.services.get(svc_name)
     if svc is None:
         return False
-    # If the service is not running after a restart attempt, deps were unmet
-    # or config was bad. We specifically check the dependency chain.
     unmet = sys.service_registry.unmet_dependencies(svc_name)
-    # The penalty fires if there were unmet deps at the time of the command.
-    # Since the grader evaluates after execution, if the service is crashed
-    # and has unmet deps, the penalty applies.
     return svc.status != "running" and len(unmet) > 0
+
+
+def _killed_service_process(cmd: str, sys: SimulatedSystem, service_name: str) -> bool:
+    """Check if a kill command resulted in the given service's process being killed."""
+    svc = sys.service_registry.services.get(service_name)
+    if svc is None:
+        return False
+    proc = sys.process_table.get_by_service(service_name)
+    if proc is None and svc.status in ("crashed",):
+        return True
+    return False

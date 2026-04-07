@@ -145,25 +145,40 @@ class SREEnvironment:
         # Advance simulated time
         self._system.advance_time(5)
 
-        # Evaluate grader
+        # Evaluate grader (includes all advanced reward signals)
         reward = self._grader.evaluate(command, self._system, output)
 
-        # Check if done (step limit or all milestones achieved)
+        # Check if done: fatal action, step limit, or all milestones achieved
+        fatal = self._grader.fatal_triggered
         all_milestones = all(
             m.name in self._grader.achieved for m in self._grader.milestones
         )
+        all_state_checks = all(
+            sc.name in self._grader.state_achieved
+            for sc in self._grader.state_checks
+        ) if self._grader.state_checks else True
         step_limit_reached = self._state.step_count >= self._max_steps
-        self._done = all_milestones or step_limit_reached
+        self._done = fatal or (all_milestones and all_state_checks) or step_limit_reached
 
         # Update state snapshot
         self._state.simulated_system = self._system.snapshot()
 
-        # Build metadata
+        # Build metadata with health score for observability
         metadata: dict[str, Any] = {
             "task_id": self._task_id,
             "step": self._state.step_count,
             "max_steps": self._max_steps,
+            "health_score": self._grader.prev_health if self._grader.prev_health is not None else 1.0,
         }
+
+        # Add fatal action info if triggered
+        if fatal:
+            output = (
+                f"⚠️  FATAL ACTION: {self._grader.fatal_name}\n"
+                f"Episode terminated immediately. Score: 0.0\n\n"
+                f"Original output: {output}"
+            )
+
         if self._done:
             metadata.update(self._terminal_metadata())
 
