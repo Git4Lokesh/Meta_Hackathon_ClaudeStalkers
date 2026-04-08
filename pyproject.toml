@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-sre-env"
+version = "0.1.0"
+description = "SRE Incident Response Environment for OpenEnv"
+requires-python = ">=3.10"
+dependencies = [
+    "openenv-core[core]>=0.2.2",
+    "fastapi>=0.115.0",
+    "pydantic>=2.0.0",
+    "uvicorn>=0.24.0",
+    "requests>=2.31.0",
+    "openai>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "hypothesis>=6.0.0",
+]
+
+[project.scripts]
+server = "sre_env.server.app:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["sre_env", "sre_env.server", "sre_env.server.tasks"]
+package-dir = { "sre_env" = ".", "sre_env.server" = "server", "sre_env.server.tasks" = "server/tasks" }
