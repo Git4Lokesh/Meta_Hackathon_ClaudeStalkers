@@ -222,10 +222,6 @@ def run_task(client: OpenAI, env_client: SREClient, task_config: dict) -> dict:
                 "content": f"[Step {step}] Output:\n{obs.output}\n\nWhat command do you want to run next?",
             })
 
-            # Keep system prompt + last 10 messages to avoid context overflow
-            if len(messages) > 11:
-                messages = [messages[0]] + messages[-10:]
-
             if done:
                 break
 
