@@ -33,7 +33,7 @@ STEP_PENALTY = 0.01
 MUTATING_ACTION_COST = 0.05
 PROGRESS_REVERSAL_PENALTY = 0.15
 HEALTH_DROP_MULTIPLIER = 0.5
-FATAL_SCORE = 0.0
+FATAL_SCORE = 0.01
 
 NOOP_PENALTY_NAME = "noop"
 NOOP_PENALTY_AMOUNT = 0.02
@@ -323,7 +323,7 @@ class TaskGrader:
                 total_penalty += penalty_amounts[name]
 
         raw = credit - total_penalty
-        return max(0.0, min(1.0, raw))
+        return max(0.01, min(0.99, raw))
 
     def result(self, done: bool) -> GraderResult:
         """Build a GraderResult with current state."""

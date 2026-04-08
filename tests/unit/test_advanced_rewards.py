@@ -54,7 +54,7 @@ class TestStepEfficiencyPenalty:
 
         # Each step should incur STEP_PENALTY
         # Score should decrease over time (from step penalties)
-        assert scores[-1] < scores[0] or scores[0] == 0.0  # may start at 0
+        assert scores[-1] < scores[0] or scores[0] <= 0.01  # may start at minimum
 
     def test_fewer_steps_higher_score(self):
         """An efficient agent gets a higher score than a wasteful one."""
@@ -257,19 +257,17 @@ class TestCriticalFailureConditions:
         assert obs.reward == FATAL_SCORE, f"Score should be {FATAL_SCORE}, got {obs.reward}"
 
     def test_fatal_action_score_zero(self):
-        """Fatal action should set score to exactly 0.0."""
+        """Fatal action should set score to FATAL_SCORE."""
         env = make_simple_env()
         env.reset(task_id="task1", seed=42)
 
-        # First earn some credit
         env.step(SREAction(command="cat /var/log/nginx/error.log"))
         env.step(SREAction(command="systemctl status nginx"))
 
-        # Now kill postgres — should zero out everything
         postgres_proc = env._system.process_table.get_by_service("postgres")
         obs = env.step(SREAction(command=f"kill -9 {postgres_proc.pid}"))
 
-        assert obs.reward == 0.0
+        assert obs.reward == FATAL_SCORE
 
     def test_fatal_in_grader_result(self):
         """GraderResult should reflect fatal action."""
@@ -281,7 +279,7 @@ class TestCriticalFailureConditions:
 
         result = env._grader.result(done=True)
         assert result.fatal_action_triggered is True
-        assert result.score == 0.0
+        assert result.score == FATAL_SCORE
 
     def test_fatal_message_in_output(self):
         """Output should contain FATAL ACTION warning."""
@@ -300,7 +298,7 @@ class TestCriticalFailureConditions:
 
         obs = env.step(SREAction(command="systemctl stop postgres"))
         assert obs.done is True
-        assert obs.reward == 0.0
+        assert obs.reward == FATAL_SCORE
 
     def test_task3_killing_postgres_is_fatal(self):
         """In task3, killing postgres (root dependency) is fatal."""
@@ -311,7 +309,7 @@ class TestCriticalFailureConditions:
         obs = env.step(SREAction(command=f"kill -9 {postgres_proc.pid}"))
 
         assert obs.done is True
-        assert obs.reward == 0.0
+        assert obs.reward == FATAL_SCORE
 
     def test_no_further_steps_after_fatal(self):
         """After fatal, additional steps should return done=True."""
