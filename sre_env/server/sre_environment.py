@@ -41,6 +41,8 @@ class SREEnvironment:
         self._max_steps: int = 0
         self._done: bool = False
         self._initial_observation: Optional[SREObservation] = None
+        self._steps_since_progress: int = 0
+        self._last_achieved_count: int = 0
 
     def reset(
         self,
@@ -76,6 +78,8 @@ class SREEnvironment:
         self._task_id = task_id
         self._max_steps = task_def.max_steps
         self._done = False
+        self._steps_since_progress = 0
+        self._last_achieved_count = 0
 
         # Initialize state
         self._state = SREState(
@@ -160,6 +164,14 @@ class SREEnvironment:
         step_limit_reached = self._state.step_count >= self._max_steps
         self._done = fatal or (all_milestones and all_state_checks) or step_limit_reached
 
+        # Track progress for hint system
+        current_achieved = len(self._grader.achieved) + len(self._grader.state_achieved)
+        if current_achieved > self._last_achieved_count:
+            self._steps_since_progress = 0
+            self._last_achieved_count = current_achieved
+        else:
+            self._steps_since_progress += 1
+
         # Update state snapshot
         self._state.simulated_system = self._system.snapshot()
 
@@ -178,6 +190,23 @@ class SREEnvironment:
                 f"Episode terminated immediately. Score: 0.0\n\n"
                 f"Original output: {output}"
             )
+
+        # If stuck for 5+ steps, add a hint
+        if self._steps_since_progress >= 5:
+            hint = self._get_hint()
+            if hint:
+                output += f"\n\n💡 Hint: {hint}"
+
+        # Build status header
+        services = self._system.service_registry.services
+        running = sum(1 for s in services.values() if s.status == "running")
+        total = len(services)
+        header = (
+            f"[Step {self._state.step_count}/{self._max_steps}] "
+            f"[Services: {running}/{total} healthy] "
+            f"[Score: {reward:.2f}]"
+        )
+        output = f"{header}\n{'─' * 50}\n{output}"
 
         if self._done:
             metadata.update(self._terminal_metadata())
@@ -243,6 +272,45 @@ class SREEnvironment:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _get_hint(self) -> str:
+        """Return a task-specific hint based on unachieved milestones."""
+        if self._grader is None:
+            return ""
+
+        not_achieved = [m.name for m in self._grader.milestones if m.name not in self._grader.achieved]
+
+        if not not_achieved:
+            return ""
+
+        # Return a hint for the first unachieved milestone
+        hints = {
+            # Task 1
+            "read_error_log": "Try checking the nginx error logs at /var/log/nginx/error.log",
+            "check_service_status": "Try checking the service status with systemctl",
+            "restart_nginx": "The service needs to be restarted",
+            "verify_running": "Verify the fix by checking the service or making an HTTP request",
+            # Task 2
+            "check_memory": "Check system memory usage with 'free' or 'top'",
+            "identify_process": "Look at the process table with 'ps aux' to find the high-memory process",
+            "read_oom_logs": "Check /var/log/syslog for OOM killer messages",
+            "kill_process": "Kill the process that's using excessive memory",
+            "restart_service": "Restart the affected service after killing the leaking process",
+            "verify_healthy": "Verify the service is healthy again",
+            # Task 3
+            "read_lb_logs": "Start by reading the load balancer logs",
+            "read_app_logs": "Check the app server logs for connection errors",
+            "read_db_logs": "Check the database connector logs for the root cause",
+            "read_config": "Look at the database configuration file in /etc/app/",
+            "fix_config": "The database config has an incorrect password that needs fixing",
+            "restart_db_connector": "Restart the database connector first (it's the root dependency)",
+            "restart_app_server": "Restart the app server after the DB connector is healthy",
+            "restart_load_balancer": "Restart the load balancer last",
+            "verify_all": "Verify all services are running with curl or systemctl",
+        }
+
+        first_unachieved = not_achieved[0]
+        return hints.get(first_unachieved, "Check the logs and service statuses for clues")
 
     def _build_system_overview(self) -> str:
         """Build a text summary of the current system state."""
