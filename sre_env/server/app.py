@@ -61,7 +61,9 @@ async def health():
 
 
 @app.post("/reset")
-async def reset(req: ResetRequest):
+async def reset(req: Optional[ResetRequest] = None):
+    if req is None:
+        req = ResetRequest()
     obs = env.reset(task_id=req.task_id, seed=req.seed, episode_id=req.episode_id)
     return obs.model_dump()
 
