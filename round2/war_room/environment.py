@@ -23,6 +23,7 @@ from round2.war_room.observation_builders import (
 )
 from round2.war_room.role_permissions import validate_command
 from round2.war_room.tasks import WAR_ROOM_TASK_REGISTRY
+from round2.war_room.adaptive import PerformanceTracker
 from sre_env.server.simulated_system import SimulatedSystem
 from sre_env.server.command_parser import CommandParser
 
@@ -46,6 +47,7 @@ class WarRoomEnvironment:
             "diagnosis": "",
             "remediation": "",
         }
+        self._performance_tracker = PerformanceTracker()
 
     # ------------------------------------------------------------------
     # OpenEnv API
@@ -183,6 +185,13 @@ class WarRoomEnvironment:
         if comm_breakdown and not fatal:
             self._grader.penalties_applied.append("communication_breakdown")
 
+        # Record episode for adaptive difficulty
+        if self._done and self._grader:
+            score = self._grader.current_score()
+            self._performance_tracker.record_episode(
+                self._task_id or "", score, self._round_number,
+            )
+
         # Store outputs for next round's observations
         self._prev_outputs = outputs
 
@@ -214,6 +223,7 @@ class WarRoomEnvironment:
             metadata["milestones_achieved"] = reward_result.milestones_achieved
             metadata["penalties_applied"] = reward_result.penalties_applied
             metadata["credit_assignment"] = reward_result.credit_assignment
+            metadata["adaptive_difficulty"] = self._performance_tracker.summary()
 
         return MultiAgentObservation(
             triage=AgentObservation(
@@ -243,6 +253,10 @@ class WarRoomEnvironment:
             done=self._done,
             metadata=metadata,
         )
+
+    def get_performance_summary(self) -> dict:
+        """Return adaptive difficulty performance summary."""
+        return self._performance_tracker.summary()
 
     @property
     def state(self) -> WarRoomState:
