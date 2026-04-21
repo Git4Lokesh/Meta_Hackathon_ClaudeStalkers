@@ -1,0 +1,37 @@
+{
+  "episode": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "task": [
+    "task1",
+    "task1",
+    "task3",
+    "task4",
+    "task3"
+  ],
+  "team_reward": [
+    0.88,
+    0.88,
+    0.01,
+    0.01,
+    0.01
+  ],
+  "rounds_used": [
+    4,
+    4,
+    3,
+    3,
+    3
+  ],
+  "milestones_achieved": [
+    5,
+    5,
+    0,
+    0,
+    0
+  ]
+}
