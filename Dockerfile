@@ -16,9 +16,11 @@ RUN pip install --no-cache-dir \
     pydantic>=2.0.0 \
     uvicorn>=0.24.0 \
     requests>=2.31.0 \
-    openai>=1.0.0
+    openai>=1.0.0 \
+    rich>=13.0.0 \
+    matplotlib>=3.8.0
 
-# Set PYTHONPATH so sre_env imports work
+# Set PYTHONPATH so all imports work
 ENV PYTHONPATH="/app"
 
 # Health check
@@ -27,4 +29,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 EXPOSE 8000
 
-CMD ["uvicorn", "sre_env.server.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Serve the Multi-Agent War Room environment (Round 2)
+CMD ["uvicorn", "round2.war_room.app:app", "--host", "0.0.0.0", "--port", "8000"]

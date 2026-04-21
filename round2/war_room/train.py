@@ -779,39 +779,25 @@ def train(
 
         print("\n--- Simulated training complete. Install TRL for real GRPO training. ---")
     else:
-        # Real GRPO training
+        # Real GRPO training — delegates to train_colab.py
         print("\n--- Starting GRPO Training ---\n")
+        print("Delegating to train_colab.py for full GRPO pipeline...\n")
 
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModelForCausalLM.from_pretrained(model_name)
-
-        config = GRPOConfig(
+        from round2.war_room.train_colab import train_grpo
+        grpo_metrics = train_grpo(
+            model_name=model_name,
+            num_episodes=num_episodes,
+            tasks=tasks,
             output_dir=output_dir,
-            num_train_epochs=1,
-            per_device_train_batch_size=1,
-            learning_rate=1e-5,
-            logging_steps=1,
         )
 
-        # Define reward function for GRPO
-        def reward_fn(completions, **kwargs):
-            """Compute rewards for a batch of completions."""
-            rewards = []
-            for completion in completions:
-                reward = 0.5  # placeholder
-                rewards.append(reward)
-            return rewards
+        # Merge GRPO metrics into our metrics dict
+        if grpo_metrics:
+            for key in metrics:
+                if key in grpo_metrics:
+                    metrics[key] = grpo_metrics[key]
 
-        trainer = GRPOTrainer(
-            model=model,
-            config=config,
-            tokenizer=tokenizer,
-            reward_funcs=[reward_fn],
-        )
-
-        trainer.train()
-        trainer.save_model(output_dir)
-        print(f"\nModel saved to {output_dir}")
+        print(f"\nGRPO training complete. Model saved to {output_dir}")
 
     # Save metrics
     os.makedirs(output_dir, exist_ok=True)
