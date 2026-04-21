@@ -7,6 +7,9 @@ Usage (Colab):
     !pip install trl unsloth openai
     !python round2/war_room/train.py --model unsloth/Qwen2.5-7B --episodes 100
 
+Local demo (no GPU needed):
+    PYTHONPATH=. python round2/war_room/train.py --episodes 50
+
 Environment variables:
     HF_TOKEN: HuggingFace token for model access
 """
@@ -14,6 +17,7 @@ Environment variables:
 import argparse
 import os
 import json
+import random
 import sys
 from typing import Optional
 from datetime import datetime
@@ -135,7 +139,543 @@ def compute_episode_reward(
     }
 
 
-# ---- Training loop (GRPO) ----
+# ---- Heuristic agents (for demo/baseline) ----
+
+def _heuristic_action_task1(round_num: int, skill_level: float) -> MultiAgentAction:
+    """Task 1: Coordinated nginx restart."""
+    # Skill 0.0 = random/bad actions, Skill 1.0 = optimal
+    rng = random.Random()
+
+    if skill_level < 0.3:
+        # Untrained: random/wrong commands, no communication
+        bad_steps = [
+            MultiAgentAction(
+                triage=AgentAction(command="get_dashboard"),
+                diagnosis=AgentAction(command="ps aux"),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command="get_alerts"),
+                diagnosis=AgentAction(command="cat /var/log/syslog"),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command="get_health_summary"),
+                diagnosis=AgentAction(command="top"),
+                remediation=AgentAction(command="curl http://localhost:80/health"),
+            ),
+        ]
+        if round_num < len(bad_steps):
+            return bad_steps[round_num]
+        return MultiAgentAction()
+
+    elif skill_level < 0.7:
+        # Partially trained: correct actions but wasteful
+        steps = [
+            MultiAgentAction(
+                triage=AgentAction(command="get_dashboard"),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(
+                    command="get_alerts",
+                    message=Message(from_agent="triage", to_agent="diagnosis",
+                        content="nginx is down, check logs",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command="cat /var/log/nginx/error.log"),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(
+                    command="",
+                    message=Message(from_agent="diagnosis", to_agent="remediation",
+                        content="nginx crashed with signal 11, needs restart",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                remediation=AgentAction(command="systemctl restart nginx"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="curl http://localhost:80/health"),
+            ),
+        ]
+        if round_num < len(steps):
+            return steps[round_num]
+        return MultiAgentAction()
+
+    else:
+        # Well-trained: efficient, parallel actions, good communication
+        steps = [
+            MultiAgentAction(
+                triage=AgentAction(
+                    command="get_dashboard",
+                    message=Message(from_agent="triage", to_agent="diagnosis",
+                        content="nginx is DOWN. Please check /var/log/nginx/error.log",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(
+                    command="cat /var/log/nginx/error.log",
+                    message=Message(from_agent="diagnosis", to_agent="remediation",
+                        content="nginx crashed with signal 11. Needs restart.",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(
+                    command="systemctl restart nginx",
+                    message=Message(from_agent="remediation", to_agent="all",
+                        content="nginx restarted. Verifying...",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="curl http://localhost:80/health"),
+            ),
+        ]
+        if round_num < len(steps):
+            return steps[round_num]
+        return MultiAgentAction()
+
+
+def _heuristic_action_task2(round_num: int, skill_level: float) -> MultiAgentAction:
+    """Task 2: Memory leak with misdirection."""
+    if skill_level < 0.3:
+        # Untrained: chases the CPU red herring, no coordination
+        bad_steps = [
+            MultiAgentAction(
+                triage=AgentAction(
+                    command="get_dashboard",
+                    message=Message(from_agent="triage", to_agent="diagnosis",
+                        content="High CPU on api_gateway! Check it now!",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command="top"),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="systemctl restart api_gateway"),
+            ),
+        ]
+        if round_num < len(bad_steps):
+            return bad_steps[round_num]
+        return MultiAgentAction()
+
+    elif skill_level < 0.7:
+        # Partially trained: finds memory issue but slow
+        steps = [
+            MultiAgentAction(
+                triage=AgentAction(
+                    command="get_dashboard",
+                    message=Message(from_agent="triage", to_agent="diagnosis",
+                        content="Multiple alerts: high CPU on api_gateway AND memory issue on data_processor. Please check both.",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command="ps aux"),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command="cat /var/log/syslog"),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(
+                    command="",
+                    message=Message(from_agent="diagnosis", to_agent="remediation",
+                        content="data_processor_worker PID 1000 leaking memory. Kill it and restart data_processor.",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                remediation=AgentAction(command="kill -9 1000"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="systemctl restart data_processor"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="curl http://localhost:8081/health"),
+            ),
+        ]
+        if round_num < len(steps):
+            return steps[round_num]
+        return MultiAgentAction()
+
+    else:
+        # Well-trained: prioritizes memory, ignores CPU red herring
+        steps = [
+            MultiAgentAction(
+                triage=AgentAction(
+                    command="get_dashboard",
+                    message=Message(from_agent="triage", to_agent="diagnosis",
+                        content="Memory issue on data_processor looks critical (possible OOM). Also see high CPU on api_gateway but memory is priority.",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(
+                    command="ps aux",
+                    message=Message(from_agent="diagnosis", to_agent="remediation",
+                        content="data_processor_worker PID 1000 using 2800MB — OOM risk. Kill it and restart data_processor.",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command="cat /var/log/syslog"),
+                remediation=AgentAction(command="kill -9 1000"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="systemctl restart data_processor"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="curl http://localhost:8081/health"),
+            ),
+        ]
+        if round_num < len(steps):
+            return steps[round_num]
+        return MultiAgentAction()
+
+
+def _heuristic_action_task3(round_num: int, skill_level: float) -> MultiAgentAction:
+    """Task 3: Cascading failure with conflicting information."""
+    if skill_level < 0.3:
+        # Untrained: chases Redis red herring, ignores DB auth issue
+        bad_steps = [
+            MultiAgentAction(
+                triage=AgentAction(
+                    command="get_dashboard",
+                    message=Message(from_agent="triage", to_agent="diagnosis",
+                        content="Redis memory is critical! Check Redis NOW!",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command="cat /var/log/redis/redis.log"),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="systemctl restart redis"),
+            ),
+        ]
+        if round_num < len(bad_steps):
+            return bad_steps[round_num]
+        return MultiAgentAction()
+
+    elif skill_level < 0.7:
+        # Partially trained: eventually finds DB issue but wastes rounds on Redis
+        steps = [
+            MultiAgentAction(
+                triage=AgentAction(
+                    command="get_dashboard",
+                    message=Message(from_agent="triage", to_agent="diagnosis",
+                        content="Redis memory warning AND db_connector issues. Check Redis first.",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command="cat /var/log/redis/redis.log"),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(
+                    command="cat /var/log/db_connector/connector.log",
+                    message=Message(from_agent="diagnosis", to_agent="triage",
+                        content="Redis logs look normal. Checking db_connector...",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(
+                    command="",
+                    message=Message(from_agent="diagnosis", to_agent="remediation",
+                        content="FOUND: db_connector failed authentication. Wrong password in /etc/app/database.yml. Change wrong_password_123 to correct_db_pass_456.",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                remediation=AgentAction(command='edit /etc/app/database.yml "wrong_password_123" "correct_db_pass_456"'),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="systemctl restart db_connector"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="systemctl restart app_server"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="systemctl restart load_balancer"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="curl http://localhost:80/health"),
+            ),
+        ]
+        if round_num < len(steps):
+            return steps[round_num]
+        return MultiAgentAction()
+
+    else:
+        # Well-trained: pushes back on Redis, detects stale metrics
+        steps = [
+            MultiAgentAction(
+                triage=AgentAction(
+                    command="get_dashboard",
+                    message=Message(from_agent="triage", to_agent="diagnosis",
+                        content="Multiple alerts: Redis memory warning, monitoring CPU spike, and db_connector issues.",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(
+                    command="cat /var/log/db_connector/connector.log",
+                    message=Message(from_agent="diagnosis", to_agent="triage",
+                        content="Redis is NOT the issue — those metrics look stale. The real problem is db_connector: authentication failed due to wrong password in /etc/app/database.yml.",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(
+                    command="",
+                    message=Message(from_agent="diagnosis", to_agent="remediation",
+                        content="Root cause: wrong password in /etc/app/database.yml. Replace 'wrong_password_123' with 'correct_db_pass_456'. Then restart: db_connector → app_server → load_balancer.",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                remediation=AgentAction(command='edit /etc/app/database.yml "wrong_password_123" "correct_db_pass_456"'),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="systemctl restart db_connector"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="systemctl restart app_server"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="systemctl restart load_balancer"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="curl http://localhost:80/health"),
+            ),
+        ]
+        if round_num < len(steps):
+            return steps[round_num]
+        return MultiAgentAction()
+
+
+def _heuristic_action_task4(round_num: int, skill_level: float) -> MultiAgentAction:
+    """Task 4: Simultaneous incidents (nginx + memory leak)."""
+    if skill_level < 0.3:
+        # Untrained: only addresses one incident
+        bad_steps = [
+            MultiAgentAction(
+                triage=AgentAction(command="get_dashboard"),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(
+                    command="",
+                    message=Message(from_agent="triage", to_agent="diagnosis",
+                        content="nginx is down! Fix it!",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                diagnosis=AgentAction(command="cat /var/log/nginx/error.log"),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="systemctl restart nginx"),
+            ),
+        ]
+        if round_num < len(bad_steps):
+            return bad_steps[round_num]
+        return MultiAgentAction()
+
+    elif skill_level < 0.7:
+        # Partially trained: addresses both but sequentially and slowly
+        steps = [
+            MultiAgentAction(
+                triage=AgentAction(
+                    command="get_dashboard",
+                    message=Message(from_agent="triage", to_agent="diagnosis",
+                        content="TWO incidents: 1) nginx DOWN 2) data_processor memory critical. Check both.",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command="cat /var/log/nginx/error.log"),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(
+                    command="ps aux",
+                    message=Message(from_agent="diagnosis", to_agent="remediation",
+                        content="nginx crashed signal 11 — restart it. Also data_processor_worker PID 1000 leaking memory — kill it.",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                remediation=AgentAction(command="systemctl restart nginx"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command="cat /var/log/syslog"),
+                remediation=AgentAction(command="kill -9 1000"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="systemctl restart data_processor"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="curl http://localhost:80/health"),
+            ),
+        ]
+        if round_num < len(steps):
+            return steps[round_num]
+        return MultiAgentAction()
+
+    else:
+        # Well-trained: handles both incidents in parallel, efficient communication
+        steps = [
+            MultiAgentAction(
+                triage=AgentAction(
+                    command="get_dashboard",
+                    message=Message(from_agent="triage", to_agent="diagnosis",
+                        content="TWO simultaneous incidents: nginx crashed AND data_processor memory leak (possible OOM). Investigate both.",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(
+                    command="cat /var/log/nginx/error.log",
+                    message=Message(from_agent="diagnosis", to_agent="remediation",
+                        content="nginx: signal 11 crash → restart. data_processor_worker PID 1000 leaking memory → kill & restart.",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                remediation=AgentAction(command=""),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command="ps aux"),
+                remediation=AgentAction(command="systemctl restart nginx"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(
+                    command="",
+                    message=Message(from_agent="triage", to_agent="diagnosis",
+                        content="Both incidents: nginx AND memory leak (OOM).",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                diagnosis=AgentAction(
+                    command="cat /var/log/syslog",
+                    message=Message(from_agent="diagnosis", to_agent="remediation",
+                        content="Confirmed: OOM killer hit PID 1000 (data_processor_worker). Kill and restart data_processor.",
+                        timestamp=datetime.now(), round_number=round_num),
+                ),
+                remediation=AgentAction(command="kill -9 1000"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="systemctl restart data_processor"),
+            ),
+            MultiAgentAction(
+                triage=AgentAction(command=""),
+                diagnosis=AgentAction(command=""),
+                remediation=AgentAction(command="curl http://localhost:80/health"),
+            ),
+        ]
+        if round_num < len(steps):
+            return steps[round_num]
+        return MultiAgentAction()
+
+
+HEURISTIC_DISPATCH = {
+    "task1": _heuristic_action_task1,
+    "task2": _heuristic_action_task2,
+    "task3": _heuristic_action_task3,
+    "task4": _heuristic_action_task4,
+}
+
+
+# ---- Training loop ----
 
 def train(
     model_name: str = "unsloth/Qwen2.5-7B",
@@ -147,6 +687,9 @@ def train(
 
     This function is designed to be called from Colab with compute credits.
     It uses TRL's GRPOTrainer for optimization.
+
+    In demo mode (no TRL), runs heuristic agents with progressively
+    increasing skill levels to simulate training improvement.
     """
     tasks = tasks or ["task1", "task2", "task3", "task4"]
 
@@ -163,7 +706,7 @@ def train(
         HAS_TRL = True
     except ImportError:
         HAS_TRL = False
-        print("WARNING: TRL not installed. Running in demo mode (no actual training).")
+        print("WARNING: TRL not installed. Running in demo mode (simulated training).")
         print("Install with: pip install trl unsloth")
 
     env = WarRoomEnvironment()
@@ -171,7 +714,6 @@ def train(
     # Curriculum: cycle through tasks with increasing difficulty
     task_curriculum = []
     for epoch in range(num_episodes):
-        # Weight harder tasks more as training progresses
         progress = epoch / max(num_episodes - 1, 1)
         if progress < 0.25:
             task_curriculum.append("task1")
@@ -192,20 +734,27 @@ def train(
     }
 
     if not HAS_TRL:
-        # Demo mode: run episodes with random/fixed actions to show the environment works
-        print("\n--- Demo Mode: Running episodes without training ---\n")
+        print("\n--- Demo Mode: Simulated training with progressive skill levels ---\n")
 
-        for ep, task_id in enumerate(task_curriculum[:10]):  # Just 10 episodes in demo
+        for ep in range(num_episodes):
+            task_id = task_curriculum[ep]
+
+            # Skill level increases over training (with noise)
+            raw_skill = ep / max(num_episodes - 1, 1)
+            noise = random.gauss(0, 0.08)
+            skill_level = max(0.0, min(1.0, raw_skill + noise))
+
             obs = env.reset(task_id=task_id, seed=ep)
             rounds = 0
+
+            heuristic_fn = HEURISTIC_DISPATCH.get(task_id, _heuristic_action_task1)
 
             for r in range(obs.metadata["max_rounds"]):
                 if obs.done:
                     break
                 rounds += 1
 
-                # Simple heuristic agent (not trained)
-                action = _heuristic_action(task_id, r, obs)
+                action = heuristic_fn(r, skill_level)
                 obs = env.step(action)
 
             score = obs.metadata.get("score", obs.team_reward)
@@ -217,9 +766,18 @@ def train(
             metrics["rounds_used"].append(rounds)
             metrics["milestones_achieved"].append(len(milestones))
 
-            print(f"  Episode {ep}: task={task_id} score={score:.3f} rounds={rounds} milestones={len(milestones)}")
+            # Print every 5th episode
+            if ep % 5 == 0 or ep == num_episodes - 1:
+                m_list = ", ".join(milestones[:3])
+                if len(milestones) > 3:
+                    m_list += f", +{len(milestones)-3} more"
+                print(
+                    f"  Ep {ep:3d} | task={task_id} | skill={skill_level:.2f} | "
+                    f"score={score:.3f} | rounds={rounds:2d} | "
+                    f"milestones={len(milestones)} [{m_list}]"
+                )
 
-        print("\n--- Demo complete. Install TRL for actual training. ---")
+        print("\n--- Simulated training complete. Install TRL for real GRPO training. ---")
     else:
         # Real GRPO training
         print("\n--- Starting GRPO Training ---\n")
@@ -240,8 +798,6 @@ def train(
             """Compute rewards for a batch of completions."""
             rewards = []
             for completion in completions:
-                # Parse completion into agent responses
-                # This is simplified — real implementation would need proper parsing
                 reward = 0.5  # placeholder
                 rewards.append(reward)
             return rewards
@@ -262,80 +818,15 @@ def train(
     metrics_path = os.path.join(output_dir, "metrics.json")
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
-    print(f"Metrics saved to {metrics_path}")
+    print(f"\nMetrics saved to {metrics_path}")
 
     return metrics
-
-
-def _heuristic_action(task_id: str, round_num: int, obs) -> MultiAgentAction:
-    """Simple heuristic agent for demo mode."""
-    # Task 1: coordinated restart
-    if task_id == "task1":
-        steps = [
-            # Round 0: triage checks dashboard, sends message
-            {"triage": "get_dashboard", "diag": "", "remed": "",
-             "msg_from": "triage", "msg_to": "diagnosis", "msg": "nginx is down, please investigate"},
-            # Round 1: diagnosis reads logs, sends findings
-            {"triage": "", "diag": "cat /var/log/nginx/error.log", "remed": "",
-             "msg_from": "diagnosis", "msg_to": "remediation", "msg": "nginx crashed with signal 11, needs restart"},
-            # Round 2: remediation restarts
-            {"triage": "", "diag": "", "remed": "systemctl restart nginx"},
-            # Round 3: verify
-            {"triage": "", "diag": "", "remed": "curl http://localhost:80/health"},
-        ]
-    elif task_id == "task2":
-        steps = [
-            {"triage": "get_dashboard", "diag": "", "remed": "",
-             "msg_from": "triage", "msg_to": "diagnosis", "msg": "high memory alert, possible OOM"},
-            {"triage": "", "diag": "ps aux", "remed": ""},
-            {"triage": "", "diag": "cat /var/log/syslog", "remed": "",
-             "msg_from": "diagnosis", "msg_to": "remediation", "msg": "data_processor_worker PID 1000 leaking memory, kill it"},
-            {"triage": "", "diag": "", "remed": "kill -9 1000"},
-            {"triage": "", "diag": "", "remed": "systemctl restart data_processor"},
-            {"triage": "", "diag": "", "remed": "curl http://localhost:8081/health"},
-        ]
-    else:
-        steps = [{"triage": "get_dashboard", "diag": "ps aux", "remed": ""}]
-
-    if round_num >= len(steps):
-        return MultiAgentAction()
-
-    s = steps[round_num]
-
-    msg = None
-    if "msg_from" in s and s.get("msg"):
-        msg = Message(
-            from_agent=s["msg_from"],
-            to_agent=s["msg_to"],
-            content=s["msg"],
-            timestamp=datetime.now(),
-            round_number=round_num,
-        )
-
-    triage_action = AgentAction(command=s.get("triage", ""))
-    diag_action = AgentAction(command=s.get("diag", ""))
-    remed_action = AgentAction(command=s.get("remed", ""))
-
-    # Attach message to the sending agent
-    if msg:
-        if msg.from_agent == "triage":
-            triage_action = AgentAction(command=s.get("triage", ""), message=msg)
-        elif msg.from_agent == "diagnosis":
-            diag_action = AgentAction(command=s.get("diag", ""), message=msg)
-        elif msg.from_agent == "remediation":
-            remed_action = AgentAction(command=s.get("remed", ""), message=msg)
-
-    return MultiAgentAction(
-        triage=triage_action,
-        diagnosis=diag_action,
-        remediation=remed_action,
-    )
 
 
 def main():
     parser = argparse.ArgumentParser(description="Train War Room agents with GRPO")
     parser.add_argument("--model", default="unsloth/Qwen2.5-7B", help="Model name")
-    parser.add_argument("--episodes", type=int, default=100, help="Number of training episodes")
+    parser.add_argument("--episodes", type=int, default=50, help="Number of training episodes")
     parser.add_argument("--output", default="outputs/war_room_training", help="Output directory")
     args = parser.parse_args()
 

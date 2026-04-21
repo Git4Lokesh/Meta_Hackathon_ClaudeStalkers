@@ -112,14 +112,14 @@ class CascadingConflictingTask(WarRoomTaskBase):
                 service="monitoring",
                 alert_type="high_cpu",
                 severity="warning",
-                description="⚠️ STALE METRIC: High CPU on monitoring daemon (92.3%) — cached 15min ago",
+                description="High CPU on monitoring daemon (92.3%)",
                 prominence=8,
             ),
             Alert(
                 service="app_server",
                 alert_type="high_memory",
                 severity="warning",
-                description="⚠️ STALE METRIC: Memory spike on app_server (88.1%) — cached 10min ago",
+                description="Memory spike on app_server (88.1%)",
                 prominence=7,
             ),
         ]
