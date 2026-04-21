@@ -12,6 +12,7 @@ from datetime import datetime
 class SREAction(BaseModel):
     """Agent action containing a Linux-style command string."""
     command: str = Field(..., description="Linux-style command string")
+    agent_role: str = Field(default="system", description="Role of the agent taking this action (triage, diagnosis, remediation)")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 

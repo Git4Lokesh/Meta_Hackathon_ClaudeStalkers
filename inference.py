@@ -1,6 +1,6 @@
 """
-Inference Script for SRE Incident Response Environment
-=======================================================
+Inference Script for Multi-Agent SRE Incident War Room
+======================================================
 
 Environment variables:
     API_BASE_URL   The API endpoint for the LLM.
@@ -9,8 +9,8 @@ Environment variables:
 
 STDOUT FORMAT:
     [START] task=<task_name> env=sre_env model=<model_name>
-    [STEP]  step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
-    [END]   success=<true|false> steps=<n> score=<0.000> rewards=<r1,r2,...,rn>
+    [STEP]  step=<n> role=<agent_role> action=<action_str> reward=<0.00> done=<true|false>
+    [END]   success=<true|false> steps=<n> score=<0.000>
 """
 
 import os
@@ -38,67 +38,51 @@ TASKS = [
     {"task_id": "task3", "name": "cascading-failure", "max_steps": 40},
 ]
 
-SRE_SYSTEM_PROMPT = textwrap.dedent("""
-    You are an experienced Site Reliability Engineer (SRE) diagnosing and fixing production incidents.
-    You are connected to a simulated Linux server where services are failing. Your job is to:
-    1. Investigate the issue using standard Linux commands
-    2. Identify the root cause
-    3. Fix the problem
-    4. Verify the fix
+ROLES = ["triage", "diagnosis", "remediation"]
 
-    Available commands: cat, grep, tail, head, ls, ps, top, kill, systemctl, curl, df, free, netstat, edit, echo, journalctl, dmesg, help
+ROLE_PROMPTS = {
+    "triage": textwrap.dedent("""
+        You are the SRE TRIAGE Agent.
+        Your job is to identify failing systems by checking metrics and status, then delegate an investigation to the diagnosis agent.
+        
+        You can ONLY run these commands: top, free, netstat, ps, df, message, help.
+        
+        To delegate, use the message command. Example:
+        message diagnosis "I see high CPU on app_server, please investigate the logs."
+        
+        IMPORTANT: Respond with ONLY a single Linux command. No explanations.
+    """).strip(),
 
-    IMPORTANT: Respond with ONLY a single Linux command. No explanations, no markdown, no code blocks. Just the command.
+    "diagnosis": textwrap.dedent("""
+        You are the SRE DIAGNOSIS Agent.
+        Your job is to read logs and files to find the root cause of an issue handed to you by Triage.
+        
+        You can ONLY run these commands: cat, grep, tail, head, journalctl, dmesg, ls, message, help.
+        You CANNOT restart services or kill processes.
+        
+        Once you find the root cause, delegate the fix to remediation. Example:
+        message remediation "The database password in /etc/app/config is wrong. Please change it and restart the service."
+        
+        IMPORTANT: Respond with ONLY a single Linux command. No explanations.
+    """).strip(),
 
-    Examples of valid responses:
-    systemctl status nginx
-    cat /var/log/nginx/error.log
-    ps aux
-    kill -9 1234
-    systemctl restart nginx
-    curl http://localhost:80/health
-    edit /etc/app/config.yml "old_value" "new_value"
-""").strip()
+    "remediation": textwrap.dedent("""
+        You are the SRE REMEDIATION Agent.
+        Your job is to mutate system state and verify fixes based on Diagnosis's advice.
+        
+        You can ONLY run these commands: kill, systemctl, edit, curl, message, help.
+        
+        Once the fix is applied, you can message triage to verify metrics again. Example:
+        message triage "I have restarted the service, please check if CPU usage dropped."
+        
+        IMPORTANT: Respond with ONLY a single Linux command. No explanations.
+    """).strip()
+}
 
 TASK_PROMPTS = {
-    "task1": """You are an expert SRE diagnosing a production incident. A web service has gone down.
-
-Follow this diagnostic workflow:
-1. First check service status: systemctl status nginx
-2. Read error logs: cat /var/log/nginx/error.log
-3. Fix the issue: systemctl restart nginx
-4. Verify the fix: curl http://localhost:80/health
-
-Respond with ONLY a single Linux command. No explanations.""",
-
-    "task2": """You are an expert SRE diagnosing a memory leak incident.
-
-Follow this diagnostic workflow:
-1. Check memory usage: free
-2. Identify high-memory processes: ps aux
-3. Read OOM logs: cat /var/log/syslog
-4. Kill the leaking process: kill -9 <PID> (the one using 2500+ MB)
-5. Restart the affected service: systemctl restart data_processor
-6. Verify: curl http://localhost:8081/health
-
-The leaking process will be the one with memory_mb > 2000. Respond with ONLY a single Linux command.""",
-
-    "task3": """You are an expert SRE diagnosing a cascading failure across multiple services.
-
-Follow this diagnostic workflow:
-1. Read load balancer logs: cat /var/log/load_balancer/lb.log
-2. Read app server logs: cat /var/log/app_server/app.log
-3. Read DB connector logs: cat /var/log/db_connector/connector.log
-4. Read the database config: cat /etc/app/database.yml
-5. Fix the password: edit /etc/app/database.yml "wrong_password_123" "correct_db_pass_456"
-6. Restart in dependency order:
-   - systemctl restart db_connector
-   - systemctl restart app_server
-   - systemctl restart load_balancer
-7. Verify: curl http://localhost:80/health
-
-IMPORTANT: Restart services in dependency order. DB connector first, then app server, then load balancer.
-Respond with ONLY a single Linux command.""",
+    "task1": "TASK: A web service has gone down. Triage should check status, Diagnosis should read /var/log/nginx/error.log, Remediation should restart nginx and curl http://localhost:80/health.",
+    "task2": "TASK: There is a memory leak incident. Triage should check 'free', Diagnosis should read /var/log/syslog, Remediation should kill the high memory process and restart data_processor.",
+    "task3": "TASK: A cascading failure across load balancer, app server, and db connector. Fix the password in /etc/app/database.yml and restart services in dependency order.",
 }
 
 
@@ -108,11 +92,11 @@ def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
 
-def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+def log_step(step: int, role: str, action: str, reward: float, done: bool, error: Optional[str]) -> None:
     error_val = error if error else "null"
     done_val = str(done).lower()
     print(
-        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        f"[STEP] step={step} role={role.upper()} action={action} reward={reward:.2f} done={done_val} error={error_val}",
         flush=True,
     )
 
@@ -130,7 +114,7 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> No
 KNOWN_COMMANDS = [
     "cat", "grep", "tail", "head", "ls", "ps", "top",
     "kill", "systemctl", "curl", "df", "free", "netstat",
-    "edit", "echo", "help", "journalctl", "dmesg",
+    "edit", "echo", "help", "journalctl", "dmesg", "message"
 ]
 
 
@@ -179,7 +163,7 @@ def get_model_message(
 # ---- Main ----
 
 def run_task(client: OpenAI, env_client: SREClient, task_config: dict) -> dict:
-    """Run a single task and return results."""
+    """Run a single task with multiple agents and return results."""
     task_id = task_config["task_id"]
     task_name = task_config["name"]
     max_steps = task_config["max_steps"]
@@ -193,19 +177,40 @@ def run_task(client: OpenAI, env_client: SREClient, task_config: dict) -> dict:
 
     try:
         obs = env_client.reset(task_id=task_id, seed=SEED)
+        
+        task_prompt = TASK_PROMPTS.get(task_id, "Find and fix the SRE incident.")
+        
+        # Initialize thread histories for all three agents
+        agent_messages = {}
+        for role in ROLES:
+            system_prompt = f"{ROLE_PROMPTS[role]}\n\n{task_prompt}"
+            agent_messages[role] = [
+                {"role": "system", "content": system_prompt}
+            ]
 
-        system_prompt = TASK_PROMPTS.get(task_id, SRE_SYSTEM_PROMPT)
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"You are investigating a production incident.\n\n{obs.output}\n\nWhat command do you want to run?"},
-        ]
+        # Triage goes first
+        active_agent = "triage"
+        agent_messages[active_agent].append({
+            "role": "user", 
+            "content": f"You are investigating a production incident.\n\nINITIAL OBSERVATION:\n{obs.output}\n\nWhat command do you want to run?"
+        })
 
         for step in range(1, max_steps + 1):
             if obs.done:
                 break
 
-            command = get_model_message(client, messages)
-            obs = env_client.step(command)
+            # Get action from active persona
+            command = get_model_message(client, agent_messages[active_agent])
+            
+            # Check for role transition via message command
+            target_agent = active_agent
+            if command and command.startswith("message "):
+                parts = command.split(" ", 2)
+                if len(parts) >= 2 and parts[1].lower() in ROLES:
+                    target_agent = parts[1].lower()
+
+            # Execute step in environment pretending to be the active agent
+            obs = env_client.step(command, agent_role=active_agent)
 
             reward = obs.reward or 0.0
             done = obs.done
@@ -214,16 +219,28 @@ def run_task(client: OpenAI, env_client: SREClient, task_config: dict) -> dict:
             rewards.append(reward)
             steps_taken = step
 
-            log_step(step=step, action=command, reward=reward, done=done, error=error)
+            log_step(step=step, role=active_agent, action=command, reward=reward, done=done, error=error)
 
-            messages.append({"role": "assistant", "content": command})
-            messages.append({
-                "role": "user",
-                "content": f"[Step {step}] Output:\n{obs.output}\n\nWhat command do you want to run next?",
-            })
-
+            # Record action in sender's history
+            agent_messages[active_agent].append({"role": "assistant", "content": command})
+            
             if done:
                 break
+
+            # Route observation to the correct agent
+            if target_agent != active_agent:
+                # Transition to new agent
+                active_agent = target_agent
+                agent_messages[active_agent].append({
+                    "role": "user",
+                    "content": f"[Transferred to YOU ({active_agent.upper()})] Action Result:\n{obs.output}\n\nWhat command do you want to run next?"
+                })
+            else:
+                # Same agent continues
+                agent_messages[active_agent].append({
+                    "role": "user",
+                    "content": f"[Step {step}] Output:\n{obs.output}\n\nWhat command do you want to run next?",
+                })
 
         # Score is the final grader score from the last observation
         if obs.metadata and "score" in obs.metadata:
@@ -265,7 +282,7 @@ def main() -> None:
 
     # Print summary
     print("\n" + "=" * 60, flush=True)
-    print("SUMMARY", flush=True)
+    print("Multi-Agent Simulation SUMMARY", flush=True)
     print("=" * 60, flush=True)
     for r in results:
         print(f"  {r['task_name']}: score={r['score']:.3f} steps={r['steps']} success={r['success']}", flush=True)

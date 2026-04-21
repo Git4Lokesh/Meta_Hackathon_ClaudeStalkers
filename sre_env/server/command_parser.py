@@ -22,7 +22,7 @@ class CommandParser:
     SUPPORTED_COMMANDS = [
         "cat", "grep", "tail", "head", "ls", "ps", "top",
         "kill", "systemctl", "curl", "df", "free", "netstat",
-        "edit", "echo", "help", "journalctl", "dmesg",
+        "edit", "echo", "help", "journalctl", "dmesg", "message",
     ]
 
     # -----------------------------------------------------------------
@@ -330,6 +330,7 @@ class CommandParser:
             "  echo <text>             - Print text\n"
             "  journalctl [-u svc] [-n N] - Show journal logs\n"
             "  dmesg [-T]              - Show kernel messages (errors/fatals)\n"
+            "  message <target> <text> - Send a message to another agent\n"
             "  help                    - Show this help message"
         )
 
@@ -483,3 +484,16 @@ class CommandParser:
         new_content = parsed.args[2]
         result = system.edit_file(path, old_content, new_content)
         return result
+
+    def _exec_message(self, parsed: ParsedCommand, system: SimulatedSystem) -> str:
+        if len(parsed.args) < 2:
+            return "message: invalid usage. Try 'message <target_agent> <text>'"
+        
+        target = parsed.args[0]
+        # Rest of args is the message body
+        msg_body = " ".join(parsed.args[1:])
+        
+        # We append it to a simulated message broker log for the orchestrator to read if needed,
+        # but primarily returning the formatted text is used by inference.py's message history.
+        return f"[MESSAGE TO {target.upper()}]: {msg_body}"
+

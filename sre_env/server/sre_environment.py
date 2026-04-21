@@ -118,7 +118,7 @@ class SREEnvironment:
         """Execute a command and return the observation.
 
         Args:
-            action: SREAction with command string.
+            action: SREAction with command string and agent_role.
 
         Returns:
             SREObservation with command output, reward, and done flag.
@@ -142,15 +142,34 @@ class SREEnvironment:
         # Increment step count
         self._state.step_count += 1
 
-        # Execute command against simulated system
         command = action.command.strip()
-        output = self._parser.execute(command, self._system)
+        parsed = self._parser.parse(command)
 
-        # Advance simulated time
-        self._system.advance_time(5)
+        # Define RBAC rules
+        role_permissions = {
+            "triage": {"top", "free", "netstat", "ps", "df", "message", "help"},
+            "diagnosis": {"cat", "grep", "tail", "head", "journalctl", "dmesg", "ls", "message", "help"},
+            "remediation": {"kill", "systemctl", "edit", "curl", "message", "help"},
+            "system": set(self._parser.SUPPORTED_COMMANDS),  # default bypass
+        }
 
-        # Evaluate grader (includes all advanced reward signals)
-        reward = self._grader.evaluate(command, self._system, output)
+        role = action.agent_role.lower()
+        allowed_cmds = role_permissions.get(role, set())
+
+        is_rbac_violation = False
+        if parsed.command and parsed.command not in allowed_cmds:
+            output = f"Permission Denied: Role '{role}' cannot execute '{parsed.command}'. Allowed: {sorted(allowed_cmds)}"
+            reward = -0.1
+            is_rbac_violation = True
+        else:
+            # Execute command against simulated system
+            output = self._parser.execute(command, self._system)
+
+            # Advance simulated time
+            self._system.advance_time(5)
+
+            # Evaluate grader (includes all advanced reward signals)
+            reward = self._grader.evaluate(command, self._system, output)
 
         # Check if done: fatal action, step limit, or all milestones achieved
         fatal = self._grader.fatal_triggered

@@ -27,13 +27,13 @@ class SREClient:
         """Reset the environment for a task."""
         return self._env.reset(task_id=task_id, seed=seed, **kwargs)
     
-    def step(self, command: str) -> SREObservation:
+    def step(self, command: str, agent_role: str = "system") -> SREObservation:
         """Execute a command and return observation."""
-        return self._env.step(SREAction(command=command))
+        return self._env.step(SREAction(command=command, agent_role=agent_role))
     
-    def execute_command(self, command: str) -> str:
+    def execute_command(self, command: str, agent_role: str = "system") -> str:
         """Convenience: execute command and return just the output string."""
-        obs = self.step(command)
+        obs = self.step(command, agent_role=agent_role)
         return obs.output
     
     def get_system_overview(self) -> dict:
