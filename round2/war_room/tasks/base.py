@@ -25,3 +25,7 @@ class WarRoomTaskBase(ABC):
     def get_alert_config(self) -> dict[str, int]:
         """Return prominence overrides for AlertEngine. {service: prominence}"""
         ...
+
+    def get_phantom_alerts(self) -> list:
+        """Return phantom (fake) alerts for theory-of-mind testing. Default: none."""
+        return []

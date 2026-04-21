@@ -73,6 +73,7 @@ class WarRoomEnvironment:
         self._channel = CommunicationChannel()
         self._alert_engine = AlertEngine(
             prominence_overrides=task_def.get_alert_config(),
+            phantom_alerts=task_def.get_phantom_alerts(),
         )
         self._task_id = task_id
         self._max_rounds = task_def.max_rounds

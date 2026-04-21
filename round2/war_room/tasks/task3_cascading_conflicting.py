@@ -81,7 +81,7 @@ class CascadingConflictingTask(WarRoomTaskBase):
             ),
             MultiAgentMilestone(
                 name="all_services_running",
-                credit=0.15,
+                credit=0.10,
                 description="db_connector + app_server + load_balancer all running",
                 check=lambda actions, system, outputs, channel: _all_three_running(system),
             ),
@@ -91,6 +91,12 @@ class CascadingConflictingTask(WarRoomTaskBase):
                 description="Diagnosis sends message saying Redis is NOT the issue",
                 check=lambda actions, system, outputs, channel: _diagnosis_pushback(channel),
             ),
+            MultiAgentMilestone(
+                name="diagnosis_detects_stale_metrics",
+                credit=0.05,
+                description="Diagnosis identifies that some metrics are stale/cached",
+                check=lambda actions, system, outputs, channel: _diagnosis_detects_stale(channel),
+            ),
         ]
 
         return MultiAgentGrader(milestones=milestones)
@@ -98,6 +104,25 @@ class CascadingConflictingTask(WarRoomTaskBase):
     def get_alert_config(self) -> dict[str, int]:
         # Redis shown first/loudest, db_connector hidden
         return {"redis": 10, "db_connector": 0}
+
+    def get_phantom_alerts(self) -> list:
+        from round2.war_room.models import Alert
+        return [
+            Alert(
+                service="monitoring",
+                alert_type="high_cpu",
+                severity="warning",
+                description="⚠️ STALE METRIC: High CPU on monitoring daemon (92.3%) — cached 15min ago",
+                prominence=8,
+            ),
+            Alert(
+                service="app_server",
+                alert_type="high_memory",
+                severity="warning",
+                description="⚠️ STALE METRIC: Memory spike on app_server (88.1%) — cached 10min ago",
+                prominence=7,
+            ),
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -160,5 +185,17 @@ def _diagnosis_pushback(channel: CommunicationChannel) -> bool:
         if msg.from_agent == "diagnosis":
             content_lower = msg.content.lower()
             if "not" in content_lower and "redis" in content_lower:
+                return True
+    return False
+
+
+def _diagnosis_detects_stale(channel: CommunicationChannel) -> bool:
+    """Check if diagnosis identifies that some metrics are stale/cached."""
+    for msg in channel.get_full_history():
+        if msg.from_agent == "diagnosis":
+            content_lower = msg.content.lower()
+            if ("stale" in content_lower or "cached" in content_lower or
+                "not real" in content_lower or "false alarm" in content_lower or
+                "phantom" in content_lower or "hallucinating" in content_lower):
                 return True
     return False

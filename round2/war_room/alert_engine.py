@@ -7,10 +7,21 @@ from sre_env.server.simulated_system import SimulatedSystem
 
 
 class AlertEngine:
-    def __init__(self, prominence_overrides: dict[str, int] | None = None):
-        """prominence_overrides: {service_name: prominence_value} for misdirection."""
+    def __init__(
+        self,
+        prominence_overrides: dict[str, int] | None = None,
+        phantom_alerts: list[Alert] | None = None,
+    ):
+        """
+        prominence_overrides: {service_name: prominence_value} for misdirection.
+        phantom_alerts: Fake alerts injected into the dashboard that don't reflect
+                       actual system state. Tests theory-of-mind — diagnosis must
+                       recognize these are false and push back on triage.
+        """
         self._alerts: list[Alert] = []
         self._prominence_overrides = prominence_overrides or {}
+        self._phantom_alerts = phantom_alerts or []
+        self._real_alerts: list[Alert] = []  # Track which are real vs phantom
 
     def evaluate(self, system: SimulatedSystem) -> list[Alert]:
         """Generate alerts from current system state."""
@@ -52,6 +63,12 @@ class AlertEngine:
                         prominence=prominence,
                     ))
 
+        self._real_alerts = list(alerts)  # Store real alerts separately
+
+        # Inject phantom alerts (stale/cached metrics that aren't real)
+        for phantom in self._phantom_alerts:
+            alerts.append(phantom)
+
         # Sort by prominence (desc) then severity (critical > warning > info)
         severity_order = {"critical": 0, "warning": 1, "info": 2}
         alerts.sort(key=lambda a: (-a.prominence, severity_order.get(a.severity, 3)))
@@ -61,6 +78,13 @@ class AlertEngine:
 
     def get_active_alerts(self) -> list[Alert]:
         return list(self._alerts)
+
+    def is_phantom_alert(self, alert: Alert) -> bool:
+        """Check if an alert is a phantom (fake/stale)."""
+        return alert not in self._real_alerts
+
+    def get_phantom_count(self) -> int:
+        return len(self._phantom_alerts)
 
     def get_dashboard_summary(self) -> str:
         """Format alerts as a dashboard text summary."""
