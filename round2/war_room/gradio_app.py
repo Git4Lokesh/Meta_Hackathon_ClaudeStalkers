@@ -15,6 +15,7 @@ import gradio as gr
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import numpy as np
 
 from round2.war_room.environment import WarRoomEnvironment
 from round2.war_room.models import MultiAgentAction, AgentAction, Message
@@ -388,6 +389,168 @@ def _reward_plot(rewards: list) -> plt.Figure:
     return fig
 
 
+def _comm_flow_graph(messages: list) -> plt.Figure:
+    """Create a communication flow graph showing agent interactions.
+
+    Three nodes (Triage, Diagnosis, Remediation) in a triangle.
+    Directed arrows show message flow with thickness = message count.
+    Arrow color matches the source agent.
+    """
+    plt.style.use('dark_background')
+    fig, ax = plt.subplots(figsize=(6, 5))
+    fig.patch.set_facecolor('#0d1117')
+    ax.set_facecolor('#0d1117')
+
+    # Node positions (triangle)
+    positions = {
+        "triage": (0.5, 0.9),
+        "diagnosis": (0.15, 0.2),
+        "remediation": (0.85, 0.2),
+    }
+
+    node_colors = {
+        "triage": "#FFD700",
+        "diagnosis": "#00CED1",
+        "remediation": "#32CD32",
+    }
+
+    node_icons = {
+        "triage": "🚨",
+        "diagnosis": "🔎",
+        "remediation": "🛠️",
+    }
+
+    # Count messages between agents
+    flow = {}  # {(from, to): count}
+    for msg in messages:
+        key = (msg.from_agent, msg.to_agent)
+        flow[key] = flow.get(key, 0) + 1
+        # Also count "all" messages
+        if msg.to_agent == "all":
+            for target in ["triage", "diagnosis", "remediation"]:
+                if target != msg.from_agent:
+                    k2 = (msg.from_agent, target)
+                    flow[k2] = flow.get(k2, 0) + 1
+
+    # Draw edges (curved arrows)
+    for (src, dst), count in flow.items():
+        if src not in positions or dst not in positions:
+            continue
+        x1, y1 = positions[src]
+        x2, y2 = positions[dst]
+
+        # Arrow thickness based on count
+        lw = min(1 + count * 1.5, 6)
+        alpha = min(0.4 + count * 0.15, 1.0)
+
+        # Arrow color based on source
+        color = node_colors.get(src, "#58a6ff")
+
+        ax.annotate(
+            "", xy=(x2, y2), xytext=(x1, y1),
+            arrowprops=dict(
+                arrowstyle="-|>",
+                color=color,
+                lw=lw,
+                alpha=alpha,
+                connectionstyle="arc3,rad=0.2",
+                mutation_scale=15,
+            ),
+        )
+
+        # Message count label on the edge
+        mx = (x1 + x2) / 2 + 0.05 * (y2 - y1)
+        my = (y1 + y2) / 2 - 0.05 * (x2 - x1)
+        ax.text(mx, my, str(count), fontsize=10, color=color, fontweight='bold',
+                ha='center', va='center',
+                bbox=dict(boxstyle='round,pad=0.2', facecolor='#0d1117', edgecolor=color, alpha=0.8))
+
+    # Draw nodes (circles with labels)
+    for role, (x, y) in positions.items():
+        color = node_colors[role]
+        icon = node_icons[role]
+
+        circle = plt.Circle((x, y), 0.08, color=color, alpha=0.15, zorder=2)
+        ax.add_patch(circle)
+        circle_border = plt.Circle((x, y), 0.08, fill=False, color=color, linewidth=2, zorder=3)
+        ax.add_patch(circle_border)
+
+        ax.text(x, y + 0.01, icon, fontsize=20, ha='center', va='center', zorder=4)
+
+        ax.text(x, y - 0.12, role.capitalize(), fontsize=11, color=color,
+                ha='center', va='center', fontweight='bold', zorder=4)
+
+    total_msgs = sum(flow.values())
+    ax.set_title(f"Communication Flow ({total_msgs} messages)",
+                 color='#c9d1d9', fontsize=13, fontweight='bold', pad=15)
+
+    ax.set_xlim(-0.05, 1.05)
+    ax.set_ylim(0.0, 1.05)
+    ax.set_aspect('equal')
+    ax.axis('off')
+
+    plt.tight_layout()
+    return fig
+
+
+def _comm_timeline(messages: list, max_rounds: int) -> plt.Figure:
+    """Create a timeline showing when agents communicated and to whom."""
+    plt.style.use('dark_background')
+    fig, ax = plt.subplots(figsize=(10, 3))
+    fig.patch.set_facecolor('#0d1117')
+    ax.set_facecolor('#0d1117')
+
+    roles = ["triage", "diagnosis", "remediation"]
+    role_y = {"triage": 2, "diagnosis": 1, "remediation": 0}
+    role_colors = {"triage": "#FFD700", "diagnosis": "#00CED1", "remediation": "#32CD32"}
+
+    # Draw horizontal lanes
+    for role, y in role_y.items():
+        ax.axhline(y=y, color='#21262d', linewidth=0.5, linestyle='--')
+        ax.text(-0.5, y, f"{ROLE_ICONS.get(role, '')} {role.capitalize()}",
+                fontsize=10, color=role_colors[role], va='center', fontweight='bold')
+
+    # Draw messages as arrows
+    for msg in messages:
+        src = msg.from_agent
+        dst = msg.to_agent
+        rnd = msg.round_number
+
+        if src not in role_y:
+            continue
+
+        y_src = role_y[src]
+        color = role_colors.get(src, '#58a6ff')
+
+        if dst == "all":
+            for target in roles:
+                if target != src and target in role_y:
+                    y_dst = role_y[target]
+                    ax.annotate("", xy=(rnd, y_dst), xytext=(rnd, y_src),
+                                arrowprops=dict(arrowstyle="-|>", color=color, lw=1.5, alpha=0.6))
+        elif dst in role_y:
+            y_dst = role_y[dst]
+            ax.annotate("", xy=(rnd, y_dst), xytext=(rnd, y_src),
+                        arrowprops=dict(arrowstyle="-|>", color=color, lw=2, alpha=0.8))
+
+        # Message dot at source
+        ax.scatter(rnd, y_src, s=60, color=color, zorder=5, edgecolors='#0d1117', linewidths=1)
+
+    ax.set_xlabel("Round", color='#8b949e', fontsize=10)
+    ax.set_title("Communication Timeline", color='#c9d1d9', fontsize=12, fontweight='bold')
+    ax.set_xlim(-1, max(max_rounds, 5) + 0.5)
+    ax.set_ylim(-0.5, 2.5)
+    ax.set_yticks([])
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    ax.spines['bottom'].set_color('#21262d')
+    ax.tick_params(colors='#484f58')
+
+    plt.tight_layout()
+    return fig
+
+
 # ---- Tab 1: War Room ----
 
 def start_episode(task_id: str, seed: int):
@@ -415,8 +578,10 @@ def start_episode(task_id: str, seed: int):
     system_html = _service_status_html(env.state.simulated_system)
     chat_html = "\n".join(chat_history)
     fig = _reward_plot([0.0])
+    empty_flow = _comm_flow_graph([])
+    empty_timeline = _comm_timeline([], 10)
 
-    return chat_html, system_html, fig, "Episode started. Click 'Next Round' to step.", _milestone_html([])
+    return chat_html, system_html, fig, "Episode started. Click 'Next Round' to step.", _milestone_html([]), empty_flow, empty_timeline
 
 
 def next_round(task_id: str):
@@ -425,10 +590,12 @@ def next_round(task_id: str):
     task_key = _parse_task_key(task_id)
 
     if current_obs is None:
-        return "\n".join(chat_history), "<em>Start an episode first</em>", _reward_plot([0]), "Start an episode first.", _milestone_html([])
+        return "\n".join(chat_history), "<em>Start an episode first</em>", _reward_plot([0]), "Start an episode first.", _milestone_html([]), _comm_flow_graph([]), _comm_timeline([], 10)
 
     if current_obs.done:
-        return "\n".join(chat_history), _service_status_html(env.state.simulated_system), _reward_plot(reward_history), "Episode complete!", _milestone_html(milestone_list)
+        messages = env._channel.get_full_history() if env._channel else []
+        max_r = env._max_rounds if hasattr(env, '_max_rounds') else 10
+        return "\n".join(chat_history), _service_status_html(env.state.simulated_system), _reward_plot(reward_history), "Episode complete!", _milestone_html(milestone_list), _comm_flow_graph(messages), _comm_timeline(messages, max_r)
 
     steps = HEURISTIC_STEPS.get(task_key, HEURISTIC_STEPS["task1"])
 
@@ -479,8 +646,12 @@ def next_round(task_id: str):
     chat_html = "\n".join(chat_history)
     system_html = _service_status_html(env.state.simulated_system)
     fig = _reward_plot(reward_history)
+    messages = env._channel.get_full_history() if env._channel else []
+    max_r = env._max_rounds if hasattr(env, '_max_rounds') else 10
+    flow_fig = _comm_flow_graph(messages)
+    timeline_fig = _comm_timeline(messages, max_r)
 
-    return chat_html, system_html, fig, status, _milestone_html(milestone_list)
+    return chat_html, system_html, fig, status, _milestone_html(milestone_list), flow_fig, timeline_fig
 
 
 def auto_play(task_id: str, seed: int):
@@ -654,20 +825,24 @@ Each episode simulates a production incident. Three specialized agents — **Tri
 
                 reward_plot = gr.Plot(label="Reward Progress")
 
+                with gr.Row():
+                    comm_flow = gr.Plot(label="Communication Flow")
+                    comm_timeline = gr.Plot(label="Communication Timeline")
+
                 start_btn.click(
                     start_episode,
                     inputs=[task_dropdown, seed_input],
-                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display],
+                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline],
                 )
                 next_btn.click(
                     next_round,
                     inputs=[task_dropdown],
-                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display],
+                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline],
                 )
                 auto_btn.click(
                     auto_play,
                     inputs=[task_dropdown, seed_input],
-                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display],
+                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline],
                 )
 
             # ---- Tab 2: Training Curves ----
