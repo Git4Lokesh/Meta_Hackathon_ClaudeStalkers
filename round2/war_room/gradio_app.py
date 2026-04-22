@@ -616,6 +616,13 @@ def _comm_timeline(messages: list, max_rounds: int) -> plt.Figure:
 
 # ---- Tab 1: War Room ----
 
+def _belief_state_html():
+    global env
+    if env and hasattr(env, '_belief_tracker') and env._belief_tracker:
+        return env._belief_tracker.format_html()
+    return "<div style='color:#8b949e;font-style:italic;padding:10px'>No Belief State Available. Start an episode.</div>"
+
+
 def start_episode(task_id: str, seed: int):
     global env, current_obs, round_num, chat_history, reward_history, milestone_list
     task_key = _parse_task_key(task_id)
@@ -644,7 +651,7 @@ def start_episode(task_id: str, seed: int):
     empty_flow = _comm_flow_graph([])
     empty_timeline = _comm_timeline([], 10)
 
-    return chat_html, system_html, fig, "Episode started. Click 'Next Round' to step.", _milestone_html([]), empty_flow, empty_timeline
+    return chat_html, system_html, fig, "Episode started. Click 'Next Round' to step.", _milestone_html([]), empty_flow, empty_timeline, _belief_state_html()
 
 
 def next_round(task_id: str):
@@ -653,12 +660,12 @@ def next_round(task_id: str):
     task_key = _parse_task_key(task_id)
 
     if current_obs is None:
-        return "\n".join(chat_history), "<em>Start an episode first</em>", _reward_plot([0]), "Start an episode first.", _milestone_html([]), _comm_flow_graph([]), _comm_timeline([], 10)
+        return "\n".join(chat_history), "<em>Start an episode first</em>", _reward_plot([0]), "Start an episode first.", _milestone_html([]), _comm_flow_graph([]), _comm_timeline([], 10), _belief_state_html()
 
     if current_obs.done:
         messages = env._channel.get_full_history() if env._channel else []
         max_r = env._max_rounds if hasattr(env, '_max_rounds') else 10
-        return "\n".join(chat_history), _service_status_html(env.state.simulated_system), _reward_plot(reward_history), "Episode complete!", _milestone_html(milestone_list), _comm_flow_graph(messages), _comm_timeline(messages, max_r)
+        return "\n".join(chat_history), _service_status_html(env.state.simulated_system), _reward_plot(reward_history), "Episode complete!", _milestone_html(milestone_list), _comm_flow_graph(messages), _comm_timeline(messages, max_r), _belief_state_html()
 
     steps = HEURISTIC_STEPS.get(task_key, HEURISTIC_STEPS["task1"])
 
@@ -730,7 +737,7 @@ def next_round(task_id: str):
     flow_fig = _comm_flow_graph(messages)
     timeline_fig = _comm_timeline(messages, max_r)
 
-    return chat_html, system_html, fig, status, _milestone_html(milestone_list), flow_fig, timeline_fig
+    return chat_html, system_html, fig, status, _milestone_html(milestone_list), flow_fig, timeline_fig, _belief_state_html()
 
 
 def auto_play(task_id: str, seed: int):
@@ -749,7 +756,7 @@ def inject_chaos():
     """Inject a random failure mid-episode."""
     global current_obs
     if env._system is None:
-        return "\n".join(chat_history), _service_status_html({}), _reward_plot(reward_history), "Start an episode first!", _milestone_html([]), _comm_flow_graph([]), _comm_timeline([], 10)
+        return "\n".join(chat_history), _service_status_html({}), _reward_plot(reward_history), "Start an episode first!", _milestone_html([]), _comm_flow_graph([]), _comm_timeline([], 10), _belief_state_html()
 
     result = env.inject_chaos()
 
@@ -765,7 +772,7 @@ def inject_chaos():
     messages = env._channel.get_full_history() if env._channel else []
     max_r = env._max_rounds if hasattr(env, '_max_rounds') else 10
 
-    return "\n".join(chat_history), system_html, _reward_plot(reward_history), f"💥 {result}", _milestone_html(milestone_list), _comm_flow_graph(messages), _comm_timeline(messages, max_r)
+    return "\n".join(chat_history), system_html, _reward_plot(reward_history), f"💥 {result}", _milestone_html(milestone_list), _comm_flow_graph(messages), _comm_timeline(messages, max_r), _belief_state_html()
 
 
 # ---- Tab 2: Training Curves ----
@@ -922,11 +929,16 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                 # Main 3-column dashboard — everything visible without scrolling
                 with gr.Row(equal_height=True):
                     # LEFT: Agent Chat (scrollable)
-                    with gr.Column(scale=2, min_width=300):
+                    with gr.Column(scale=2, min_width=250):
                         chat_display = gr.HTML(label="Agent Chat", elem_classes=["chat-container"])
 
-                    # CENTER: Graphs (comm flow + reward)
-                    with gr.Column(scale=2, min_width=300):
+                    # CENTER 1: Belief Tracker (Theory of Mind)
+                    with gr.Column(scale=1, min_width=200):
+                        gr.Markdown("### 🧠 Theory of Mind Tracker")
+                        belief_display = gr.HTML()
+
+                    # CENTER 2: Graphs (comm flow + reward)
+                    with gr.Column(scale=2, min_width=250):
                         comm_flow = gr.Plot(label="Communication Flow")
                         reward_plot = gr.Plot(label="Reward Progress")
 
@@ -939,21 +951,21 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                 start_btn.click(
                     start_episode,
                     inputs=[task_dropdown, seed_input],
-                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline],
+                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display],
                 )
                 next_btn.click(
                     next_round,
                     inputs=[task_dropdown],
-                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline],
+                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display],
                 )
                 auto_btn.click(
                     auto_play,
                     inputs=[task_dropdown, seed_input],
-                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline],
+                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display],
                 )
                 chaos_btn.click(
                     inject_chaos,
-                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline],
+                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display],
                 )
 
             # ---- Tab 2: Training Curves ----
