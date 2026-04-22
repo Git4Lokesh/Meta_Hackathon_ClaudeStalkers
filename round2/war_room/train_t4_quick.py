@@ -305,14 +305,26 @@ def main():
     metrics_cb = MetricsCallback()
 
     try:
-        trainer = GRPOTrainer(
-            model=model,
-            args=grpo_config,
-            train_dataset=dataset,
-            reward_funcs=reward_fn,
-            peft_config=lora_config,
-            tokenizer=tokenizer,
-        )
+        # TRL >= 0.16 uses processing_class; older versions use tokenizer
+        try:
+            trainer = GRPOTrainer(
+                model=model,
+                args=grpo_config,
+                train_dataset=dataset,
+                reward_funcs=reward_fn,
+                peft_config=lora_config,
+                processing_class=tokenizer,
+            )
+        except TypeError:
+            # Fallback for older TRL versions
+            trainer = GRPOTrainer(
+                model=model,
+                args=grpo_config,
+                train_dataset=dataset,
+                reward_funcs=reward_fn,
+                peft_config=lora_config,
+                tokenizer=tokenizer,
+            )
 
         trainer.train()
 

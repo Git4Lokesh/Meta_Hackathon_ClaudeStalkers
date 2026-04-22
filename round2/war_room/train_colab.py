@@ -409,13 +409,23 @@ def train_grpo(
         log_completions=True,
     )
 
-    trainer = GRPOTrainer(
-        model=model,
-        args=training_args,
-        tokenizer=tokenizer,
-        reward_funcs=war_room_reward,
-        train_dataset=train_dataset,
-    )
+    # TRL >= 0.16 uses processing_class; older versions use tokenizer
+    try:
+        trainer = GRPOTrainer(
+            model=model,
+            args=training_args,
+            processing_class=tokenizer,
+            reward_funcs=war_room_reward,
+            train_dataset=train_dataset,
+        )
+    except TypeError:
+        trainer = GRPOTrainer(
+            model=model,
+            args=training_args,
+            tokenizer=tokenizer,
+            reward_funcs=war_room_reward,
+            train_dataset=train_dataset,
+        )
 
     print(f"  ✅ GRPOTrainer configured")
 
