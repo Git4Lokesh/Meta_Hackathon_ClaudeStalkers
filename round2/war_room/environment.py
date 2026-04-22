@@ -24,6 +24,7 @@ from round2.war_room.observation_builders import (
 from round2.war_room.role_permissions import validate_command
 from round2.war_room.tasks import WAR_ROOM_TASK_REGISTRY
 from round2.war_room.adaptive import PerformanceTracker
+from round2.war_room.belief_tracker import BeliefStateTracker
 from sre_env.server.simulated_system import SimulatedSystem
 from sre_env.server.command_parser import CommandParser
 
@@ -59,6 +60,7 @@ class WarRoomEnvironment:
         self._performance_tracker = PerformanceTracker()
         self._executive_enabled: bool = True
         self._executive_interval: int = 3  # Inject panic every N rounds
+        self._belief_tracker: Optional[BeliefStateTracker] = None
 
     # ------------------------------------------------------------------
     # OpenEnv API
@@ -96,6 +98,16 @@ class WarRoomEnvironment:
             "diagnosis": "",
             "remediation": "",
         }
+
+        # Initialize Belief State Tracker with ground truth from system state
+        ground_truth = {}
+        for svc_name, svc in self._system.service_registry.services.items():
+            ground_truth[svc_name] = {"status": svc.status}
+        phantom_entities = [a.service for a in task_def.get_phantom_alerts()]
+        self._belief_tracker = BeliefStateTracker(
+            ground_truth=ground_truth,
+            phantom_entities=phantom_entities,
+        )
 
         # Generate initial alerts
         self._alert_engine.evaluate(self._system)
@@ -190,6 +202,31 @@ class WarRoomEnvironment:
                 timestamp=self._system.current_time,
             )
 
+        # Update Belief State Tracker
+        if self._belief_tracker:
+            self._belief_tracker.set_round(self._round_number)
+            # Track commands that reveal beliefs
+            for role in ("triage", "diagnosis", "remediation"):
+                agent_action = getattr(action, role)
+                if agent_action.command:
+                    self._belief_tracker.record_command(role, agent_action.command)
+                # Track messages — infer beliefs from content
+                if agent_action.message:
+                    msg = agent_action.message
+                    content_lower = msg.content.lower()
+                    # Detect pushback messages (Theory of Mind)
+                    if "not" in content_lower or "false" in content_lower or "stale" in content_lower:
+                        for entity in list(self._belief_tracker._ground_truth.keys()):
+                            if entity.lower() in content_lower:
+                                self._belief_tracker.record_pushback(
+                                    role, msg.to_agent, entity, msg.content,
+                                )
+            # Update ground truth with current service states
+            for svc_name, svc in self._system.service_registry.services.items():
+                self._belief_tracker.update_ground_truth(svc_name, "status", svc.status)
+            # Detect belief conflicts
+            self._belief_tracker.detect_conflicts()
+
         # Evaluate grader
         reward_result = self._grader.evaluate(
             action, self._system, outputs, self._channel,
@@ -247,6 +284,10 @@ class WarRoomEnvironment:
             metadata["penalties_applied"] = reward_result.penalties_applied
             metadata["credit_assignment"] = reward_result.credit_assignment
             metadata["adaptive_difficulty"] = self._performance_tracker.summary()
+            # Include Belief State and Deception Score
+            if self._belief_tracker:
+                metadata["belief_state"] = self._belief_tracker.get_snapshot()
+                metadata["deception_score"] = self._belief_tracker.get_deception_score()
 
         return MultiAgentObservation(
             triage=AgentObservation(
@@ -366,7 +407,16 @@ class WarRoomEnvironment:
         cmd = command.strip()
 
         if cmd == "get_dashboard":
-            return self._alert_engine.get_dashboard_summary()
+            dashboard = self._alert_engine.get_dashboard_summary()
+            # Record triage beliefs from dashboard alerts
+            if self._belief_tracker and self._alert_engine:
+                for alert in self._alert_engine.get_active_alerts():
+                    status = "critical" if alert.severity == "critical" else "warning"
+                    self._belief_tracker.record_observation(
+                        "triage", "dashboard",
+                        {alert.service: status},
+                    )
+            return dashboard
         elif cmd == "get_alerts":
             return self._alert_engine.format_alerts()
         elif cmd == "get_health_summary":
