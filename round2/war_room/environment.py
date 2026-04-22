@@ -27,6 +27,15 @@ from round2.war_room.adaptive import PerformanceTracker
 from sre_env.server.simulated_system import SimulatedSystem
 from sre_env.server.command_parser import CommandParser
 
+EXECUTIVE_PANIC_MESSAGES = [
+    "🔥 CEO is asking for an update! Are we back up yet?! Revenue is dropping!",
+    "⚠️ The board meeting is in 30 minutes. I need this fixed NOW. Have you tried restarting everything?",
+    "💰 We're losing $10K per minute! Just restart the database, that usually fixes things!",
+    "📞 Customer support is overwhelmed. Can someone just reboot all the servers?",
+    "🚨 The VP of Engineering wants to know why we haven't rolled back yet. ROLL BACK NOW!",
+    "😤 This is taking too long. I'm going to SSH in and fix it myself if you don't hurry up.",
+]
+
 
 class WarRoomEnvironment:
     """Multi-Agent Incident War Room environment."""
@@ -48,6 +57,8 @@ class WarRoomEnvironment:
             "remediation": "",
         }
         self._performance_tracker = PerformanceTracker()
+        self._executive_enabled: bool = True
+        self._executive_interval: int = 3  # Inject panic every N rounds
 
     # ------------------------------------------------------------------
     # OpenEnv API
@@ -168,6 +179,17 @@ class WarRoomEnvironment:
         # Update alerts
         self._alert_engine.evaluate(self._system)
 
+        # Panicked Executive injection
+        if self._executive_enabled and self._round_number % self._executive_interval == 0:
+            import random
+            panic_msg = random.choice(EXECUTIVE_PANIC_MESSAGES)
+            self._channel.send(
+                from_agent="executive",
+                to_agent="all",
+                content=panic_msg,
+                timestamp=self._system.current_time,
+            )
+
         # Evaluate grader
         reward_result = self._grader.evaluate(
             action, self._system, outputs, self._channel,
@@ -258,6 +280,48 @@ class WarRoomEnvironment:
     def get_performance_summary(self) -> dict:
         """Return adaptive difficulty performance summary."""
         return self._performance_tracker.summary()
+
+    def inject_chaos(self) -> str:
+        """Inject a random failure into the running system.
+
+        Called by the 'INJECT CHAOS' button in the Gradio dashboard.
+        Kills a random healthy service's process, causing a new incident
+        mid-episode that agents must handle.
+        """
+        if self._system is None or self._done:
+            return "Cannot inject chaos: no active episode."
+
+        import random
+
+        # Find healthy services (running, not already being fixed)
+        healthy = [
+            name for name, svc in self._system.service_registry.services.items()
+            if svc.status == "running" and svc.pid is not None
+        ]
+
+        if not healthy:
+            return "No healthy services to disrupt!"
+
+        # Pick a random healthy service and kill it
+        target = random.choice(healthy)
+        svc = self._system.service_registry.services[target]
+        pid = svc.pid
+
+        # Kill the process
+        self._system.kill_process(pid)
+
+        # Inject a chaos message into the channel
+        self._channel.send(
+            from_agent="chaos_monkey",
+            to_agent="all",
+            content=f"🐒💥 CHAOS MONKEY: Killed {target} (PID {pid})! A new incident has been injected!",
+            timestamp=self._system.current_time,
+        )
+
+        # Update alerts
+        self._alert_engine.evaluate(self._system)
+
+        return f"💥 Chaos injected: killed {target} (PID {pid})"
 
     @property
     def state(self) -> WarRoomState:

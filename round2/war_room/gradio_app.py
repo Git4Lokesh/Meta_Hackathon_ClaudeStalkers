@@ -666,6 +666,29 @@ def auto_play(task_id: str, seed: int):
     return result
 
 
+def inject_chaos():
+    """Inject a random failure mid-episode."""
+    global current_obs
+    if env._system is None:
+        return "\n".join(chat_history), _service_status_html({}), _reward_plot(reward_history), "Start an episode first!", _milestone_html([]), _comm_flow_graph([]), _comm_timeline([], 10)
+
+    result = env.inject_chaos()
+
+    # Add chaos event to chat
+    chat_history.append(
+        f'<div class="agent-msg" style="border-left-color:#f85149;background:#3d0a0a">'
+        f'<span style="color:#f85149;font-weight:700">🐒 @ChaosMonkey</span>'
+        f'<div style="color:#f85149">{result}</div>'
+        f'</div>'
+    )
+
+    system_html = _service_status_html(env.state.simulated_system)
+    messages = env._channel.get_full_history() if env._channel else []
+    max_r = env._max_rounds if hasattr(env, '_max_rounds') else 10
+
+    return "\n".join(chat_history), system_html, _reward_plot(reward_history), f"💥 {result}", _milestone_html(milestone_list), _comm_flow_graph(messages), _comm_timeline(messages, max_r)
+
+
 # ---- Tab 2: Training Curves ----
 
 def _dark_training_plot(ax, fig):
@@ -813,6 +836,7 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                     start_btn = gr.Button("▶️ Start", variant="primary", scale=1)
                     next_btn = gr.Button("⏭️ Next", scale=1)
                     auto_btn = gr.Button("⏩ Auto", variant="secondary", scale=1)
+                    chaos_btn = gr.Button("💥 INJECT CHAOS", variant="stop", scale=1)
 
                 status_text = gr.Textbox(label="Status", interactive=False, max_lines=1)
 
@@ -846,6 +870,10 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                 auto_btn.click(
                     auto_play,
                     inputs=[task_dropdown, seed_input],
+                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline],
+                )
+                chaos_btn.click(
+                    inject_chaos,
                     outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline],
                 )
 

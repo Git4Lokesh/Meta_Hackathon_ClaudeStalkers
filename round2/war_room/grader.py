@@ -82,6 +82,8 @@ class MultiAgentGrader:
         self.round_count: int = 0
         self.fatal_triggered: bool = False
         self.fatal_name: str = ""
+        self._comm_bonus_count: int = 0
+        self._max_comm_bonuses: int = 5  # Cap at 5 useful message bonuses per episode
 
     def evaluate(
         self,
@@ -151,10 +153,12 @@ class MultiAgentGrader:
                     content_lower = msg.content.lower()
                     for milestone_name in new_milestones:
                         if _message_relevant_to_milestone(content_lower, milestone_name):
-                            comm_reward += COMMUNICATION_USEFUL_BONUS
-                            self.penalties_applied.append(
-                                f"comm_useful:{msg.from_agent}",
-                            )
+                            if self._comm_bonus_count < self._max_comm_bonuses:
+                                comm_reward += COMMUNICATION_USEFUL_BONUS
+                                self._comm_bonus_count += 1
+                                self.penalties_applied.append(
+                                    f"comm_useful:{msg.from_agent}",
+                                )
                             break
 
         # Check for incorrect messages this round
