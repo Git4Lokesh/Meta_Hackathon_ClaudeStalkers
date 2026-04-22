@@ -687,6 +687,21 @@ def next_round(task_id: str):
             msg_content = a.message.content if a.message else None
             chat_history.append(_format_chat_entry(role, a.command, msg_to, msg_content))
 
+    # Show executive/chaos monkey messages from the channel
+    if env._channel:
+        channel_msgs = env._channel.get_full_history()
+        for msg in channel_msgs:
+            if msg.round_number == round_num and msg.from_agent in ("executive", "chaos_monkey"):
+                color = "#f97316" if msg.from_agent == "executive" else "#f85149"
+                icon = "👔" if msg.from_agent == "executive" else "🐒"
+                label = "Executive" if msg.from_agent == "executive" else "ChaosMonkey"
+                chat_history.append(
+                    f'<div class="agent-msg" style="border-left-color:{color};background:#1a1000">'
+                    f'<span style="color:{color};font-weight:700">{icon} @{label}</span>'
+                    f'<div class="msg-bubble" style="border-left-color:{color}">{msg.content}</div>'
+                    f'</div>'
+                )
+
     # Update milestones
     if current_obs.done and "milestones_achieved" in current_obs.metadata:
         milestone_list = current_obs.metadata["milestones_achieved"]
