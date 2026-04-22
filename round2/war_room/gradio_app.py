@@ -305,7 +305,11 @@ def _reactive_action(rnd: int) -> MultiAgentAction:
     ]
     
     if not crashed:
-        # Everything is running — verify
+        # Everything is running — mark as done by returning a final verification
+        # Only verify once, then stop
+        if reward_history and reward_history[-1] == reward_history[-2] if len(reward_history) >= 2 else False:
+            # Already verified last round — do nothing to let round limit end it
+            return MultiAgentAction()
         return MultiAgentAction(
             triage=AgentAction(command="get_health_summary"),
             diagnosis=AgentAction(command=""),
@@ -313,7 +317,7 @@ def _reactive_action(rnd: int) -> MultiAgentAction:
                 command="curl http://localhost:80/health",
                 message=Message(
                     from_agent="remediation", to_agent="all",
-                    content="All services appear healthy. Verifying...",
+                    content="✅ All services healthy. Incident fully resolved.",
                     timestamp=datetime.now(), round_number=rnd,
                 ),
             ),
