@@ -289,6 +289,65 @@ def _build_action(step_data: dict, rnd: int) -> MultiAgentAction:
     return MultiAgentAction(**actions)
 
 
+def _reactive_action(rnd: int) -> MultiAgentAction:
+    """Fallback action that reacts to current system state.
+    
+    Checks for crashed services and tries to fix them — used when
+    heuristic steps are exhausted (e.g., after chaos injection).
+    """
+    if env._system is None:
+        return MultiAgentAction()
+    
+    # Find crashed services
+    crashed = [
+        name for name, svc in env._system.service_registry.services.items()
+        if svc.status in ("crashed", "stopped")
+    ]
+    
+    if not crashed:
+        # Everything is running — verify
+        return MultiAgentAction(
+            triage=AgentAction(command="get_health_summary"),
+            diagnosis=AgentAction(command=""),
+            remediation=AgentAction(
+                command="curl http://localhost:80/health",
+                message=Message(
+                    from_agent="remediation", to_agent="all",
+                    content="All services appear healthy. Verifying...",
+                    timestamp=datetime.now(), round_number=rnd,
+                ),
+            ),
+        )
+    
+    target = crashed[0]
+    return MultiAgentAction(
+        triage=AgentAction(
+            command="get_dashboard",
+            message=Message(
+                from_agent="triage", to_agent="diagnosis",
+                content=f"🚨 NEW ALERT: {target} is down! Investigate immediately!",
+                timestamp=datetime.now(), round_number=rnd,
+            ),
+        ),
+        diagnosis=AgentAction(
+            command="",
+            message=Message(
+                from_agent="diagnosis", to_agent="remediation",
+                content=f"Service {target} needs restart. Please fix it.",
+                timestamp=datetime.now(), round_number=rnd,
+            ),
+        ),
+        remediation=AgentAction(
+            command=f"systemctl restart {target}",
+            message=Message(
+                from_agent="remediation", to_agent="all",
+                content=f"Restarting {target}...",
+                timestamp=datetime.now(), round_number=rnd,
+            ),
+        ),
+    )
+
+
 def _format_chat_entry(role: str, command: str, message_to: str, message_content: str) -> str:
     """Format a chat entry as a polished Slack-like message bubble."""
     icon = ROLE_ICONS.get(role, "❓")
@@ -600,7 +659,8 @@ def next_round(task_id: str):
     steps = HEURISTIC_STEPS.get(task_key, HEURISTIC_STEPS["task1"])
 
     if round_num >= len(steps):
-        action = MultiAgentAction()
+        # Reactive fallback: check for crashed services and try to fix them
+        action = _reactive_action(round_num + 1)
     else:
         step_data = steps[round_num]
         action = _build_action(step_data, round_num + 1)
