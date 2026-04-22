@@ -75,7 +75,7 @@ CUSTOM_CSS = """
     border: 1px solid #21262d;
     border-radius: 12px;
     padding: 16px;
-    max-height: 600px;
+    max-height: 450px;
     overflow-y: auto;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
@@ -349,7 +349,7 @@ def _milestone_html(milestones: list) -> str:
 def _reward_plot(rewards: list) -> plt.Figure:
     """Create a dark-themed reward progress plot with gradient fill and milestone markers."""
     plt.style.use('dark_background')
-    fig, ax = plt.subplots(figsize=(8, 3))
+    fig, ax = plt.subplots(figsize=(6, 2.5))
     fig.patch.set_facecolor('#0d1117')
     ax.set_facecolor('#0d1117')
 
@@ -397,7 +397,7 @@ def _comm_flow_graph(messages: list) -> plt.Figure:
     Arrow color matches the source agent.
     """
     plt.style.use('dark_background')
-    fig, ax = plt.subplots(figsize=(6, 5))
+    fig, ax = plt.subplots(figsize=(5, 4))
     fig.patch.set_facecolor('#0d1117')
     ax.set_facecolor('#0d1117')
 
@@ -801,33 +801,37 @@ Each episode simulates a production incident. Three specialized agents — **Tri
         with gr.Tabs():
             # ---- Tab 1: War Room ----
             with gr.Tab("🔧 War Room"):
+                # Controls row — compact
                 with gr.Row():
                     task_dropdown = gr.Dropdown(
                         choices=list(TASK_DESCRIPTIONS.values()),
                         value=TASK_DESCRIPTIONS["task1"],
                         label="Incident Scenario",
+                        scale=3,
                     )
-                    seed_input = gr.Number(value=42, label="Random Seed", precision=0)
+                    seed_input = gr.Number(value=42, label="Seed", precision=0, scale=1)
+                    start_btn = gr.Button("▶️ Start", variant="primary", scale=1)
+                    next_btn = gr.Button("⏭️ Next", scale=1)
+                    auto_btn = gr.Button("⏩ Auto", variant="secondary", scale=1)
 
-                with gr.Row():
-                    start_btn = gr.Button("▶️ Start Episode", variant="primary", size="lg")
-                    next_btn = gr.Button("⏭️ Next Round", size="lg")
-                    auto_btn = gr.Button("⏩ Auto-Play", variant="secondary", size="lg")
+                status_text = gr.Textbox(label="Status", interactive=False, max_lines=1)
 
-                status_text = gr.Textbox(label="Status", interactive=False)
-
-                with gr.Row():
-                    with gr.Column(scale=3):
+                # Main 3-column dashboard — everything visible without scrolling
+                with gr.Row(equal_height=True):
+                    # LEFT: Agent Chat (scrollable)
+                    with gr.Column(scale=2, min_width=300):
                         chat_display = gr.HTML(label="Agent Chat", elem_classes=["chat-container"])
-                    with gr.Column(scale=1):
+
+                    # CENTER: Graphs (comm flow + reward)
+                    with gr.Column(scale=2, min_width=300):
+                        comm_flow = gr.Plot(label="Communication Flow")
+                        reward_plot = gr.Plot(label="Reward Progress")
+
+                    # RIGHT: Status panels (services + milestones + timeline)
+                    with gr.Column(scale=1, min_width=200):
                         service_display = gr.HTML(label="Services")
                         milestone_display = gr.HTML(label="Milestones")
-
-                reward_plot = gr.Plot(label="Reward Progress")
-
-                with gr.Row():
-                    comm_flow = gr.Plot(label="Communication Flow")
-                    comm_timeline = gr.Plot(label="Communication Timeline")
+                        comm_timeline = gr.Plot(label="Timeline")
 
                 start_btn.click(
                     start_episode,
