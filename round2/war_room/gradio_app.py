@@ -30,6 +30,182 @@ milestone_list = []
 ROLE_ICONS = {"triage": "🚨", "diagnosis": "🔎", "remediation": "🛠️"}
 ROLE_COLORS = {"triage": "#FFD700", "diagnosis": "#00CED1", "remediation": "#32CD32"}
 
+# ---- Task descriptions for the dropdown ----
+TASK_DESCRIPTIONS = {
+    "task1": "task1 — Coordinated Restart (🟢 Easy)",
+    "task2": "task2 — Memory Leak + Red Herring (🟡 Medium)",
+    "task3": "task3 — Cascading Failure + Phantom Alerts (🔴 Hard)",
+    "task4": "task4 — Two Simultaneous Incidents (⚫ Expert)",
+}
+
+def _parse_task_key(task_id: str) -> str:
+    """Extract the raw task key (e.g. 'task1') from a dropdown value or plain id."""
+    # Try direct match first
+    if task_id in HEURISTIC_STEPS:
+        return task_id
+    # Extract leading token before ' — '
+    key = task_id.split(" ")[0] if " " in task_id else task_id
+    if key in HEURISTIC_STEPS:
+        return key
+    # Fallback
+    return "task1"
+
+# ---- Custom CSS ----
+CUSTOM_CSS = """
+/* Dark theme overrides */
+.gradio-container { background: #0a0a1a !important; }
+.dark { background: #0a0a1a !important; }
+
+/* Header banner */
+.war-room-header {
+    background: linear-gradient(135deg, #1a0000 0%, #0a0a2e 50%, #001a00 100%);
+    border: 1px solid #333;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+    text-align: center;
+}
+.war-room-header h1 { color: #ff4444; margin: 0; font-size: 2em; }
+.war-room-header p { color: #888; margin: 4px 0 0 0; }
+
+/* Chat panel */
+.chat-container {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 12px;
+    padding: 16px;
+    max-height: 600px;
+    overflow-y: auto;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Agent message */
+.agent-msg {
+    margin: 8px 0;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border-left: 4px solid;
+    background: #161b22;
+    animation: fadeIn 0.3s ease;
+}
+.agent-msg.triage { border-left-color: #FFD700; }
+.agent-msg.diagnosis { border-left-color: #00CED1; }
+.agent-msg.remediation { border-left-color: #32CD32; }
+
+.agent-name { font-weight: 700; font-size: 0.9em; }
+.agent-name.triage { color: #FFD700; }
+.agent-name.diagnosis { color: #00CED1; }
+.agent-name.remediation { color: #32CD32; }
+
+.cmd-block {
+    display: inline-block;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: #7ee787;
+    font-size: 0.85em;
+    margin: 4px 0;
+}
+
+.msg-bubble {
+    color: #c9d1d9;
+    font-style: italic;
+    margin-top: 4px;
+    padding-left: 8px;
+    border-left: 2px solid #30363d;
+}
+
+.msg-target { color: #58a6ff; font-weight: 600; }
+
+/* Round separator */
+.round-sep {
+    text-align: center;
+    color: #484f58;
+    font-size: 0.8em;
+    margin: 16px 0 8px 0;
+    position: relative;
+}
+.round-sep::before, .round-sep::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 35%;
+    height: 1px;
+    background: #21262d;
+}
+.round-sep::before { left: 0; }
+.round-sep::after { right: 0; }
+
+/* Resolution banner */
+.resolution-banner {
+    background: linear-gradient(135deg, #0a3d0a, #1a4a1a);
+    border: 1px solid #238636;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    margin-top: 16px;
+}
+.resolution-banner h2 { color: #3fb950; margin: 0; }
+.resolution-banner .score { font-size: 2em; color: #7ee787; font-weight: 700; }
+
+/* Service cards */
+.svc-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.svc-card {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 8px 12px;
+    min-width: 120px;
+    text-align: center;
+}
+.svc-card.running { border-color: #238636; }
+.svc-card.crashed { border-color: #da3633; }
+.svc-card.degraded { border-color: #d29922; }
+
+.svc-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 0.7em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.svc-badge.running { background: #0d2818; color: #3fb950; }
+.svc-badge.crashed { background: #3d0a0a; color: #f85149; }
+.svc-badge.degraded { background: #3d2a0a; color: #d29922; }
+
+/* Milestone list */
+.milestone-item {
+    padding: 4px 8px;
+    margin: 2px 0;
+    border-radius: 4px;
+    background: #0d2818;
+    color: #3fb950;
+    font-size: 0.85em;
+}
+
+/* Episode header */
+.episode-header {
+    background: linear-gradient(135deg, #1a0000, #0a0a2e);
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 12px;
+    text-align: center;
+}
+.episode-header h3 { color: #ff4444; margin: 0 0 4px 0; }
+.episode-header .meta { color: #8b949e; font-size: 0.9em; }
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+"""
+
+
 # ---- Heuristic actions for each task ----
 HEURISTIC_STEPS = {
     "task1": [
@@ -113,49 +289,101 @@ def _build_action(step_data: dict, rnd: int) -> MultiAgentAction:
 
 
 def _format_chat_entry(role: str, command: str, message_to: str, message_content: str) -> str:
-    """Format a chat entry in HTML."""
+    """Format a chat entry as a polished Slack-like message bubble."""
     icon = ROLE_ICONS.get(role, "❓")
-    color = ROLE_COLORS.get(role, "#999")
     parts = []
     if command:
-        parts.append(f'<span style="background:#1a1a2e;padding:2px 6px;border-radius:4px;font-family:monospace;color:#0f0">{command}</span>')
+        parts.append(f'<div class="cmd-block">{command}</div>')
     if message_to and message_content:
-        parts.append(f'<span style="color:#aaa">→ @{message_to}:</span> <em>{message_content}</em>')
-    content = " ".join(parts) if parts else "<em>(no action)</em>"
-    return f'<div style="margin:4px 0;padding:8px;border-left:3px solid {color};background:#0d1117"><strong style="color:{color}">{icon} @{role.capitalize()}</strong> {content}</div>'
+        parts.append(
+            f'<div class="msg-bubble">'
+            f'<span class="msg-target">→ @{message_to}</span> {message_content}'
+            f'</div>'
+        )
+    content = "\n".join(parts) if parts else '<div style="color:#484f58;font-style:italic">(no action)</div>'
+    return (
+        f'<div class="agent-msg {role}">'
+        f'<span class="agent-name {role}">{icon} @{role.capitalize()}</span>'
+        f'{content}'
+        f'</div>'
+    )
 
 
 def _service_status_html(system_snapshot: dict) -> str:
-    """Build HTML for service status panel."""
+    """Build HTML card grid for service status panel."""
     if not system_snapshot:
-        return "<em>No data</em>"
+        return '<div style="color:#484f58;text-align:center;padding:16px"><em>No data</em></div>'
     services = system_snapshot.get("service_registry", {}).get("services", {})
-    rows = []
+    cards = []
     for name, svc in sorted(services.items()):
         status = svc.get("status", "unknown")
         icon = "🟢" if status == "running" else "🔴" if status == "crashed" else "🟡"
-        rows.append(f"<tr><td>{icon}</td><td><strong>{name}</strong></td><td>{status}</td><td>{svc.get('port', '?')}</td></tr>")
-    return f'<table style="width:100%"><tr><th></th><th>Service</th><th>Status</th><th>Port</th></tr>{"".join(rows)}</table>'
+        badge_cls = status if status in ("running", "crashed", "degraded") else "degraded"
+        port = svc.get("port", "?")
+        deps = svc.get("depends_on", [])
+        dep_html = ""
+        if deps:
+            dep_arrows = " → ".join(deps)
+            dep_html = f'<div style="font-size:0.7em;color:#484f58;margin-top:2px">↳ {dep_arrows}</div>'
+        cards.append(
+            f'<div class="svc-card {badge_cls}">'
+            f'<div style="font-size:1.4em">{icon}</div>'
+            f'<div><strong style="color:#c9d1d9">{name}</strong></div>'
+            f'<div><span class="svc-badge {badge_cls}">{status}</span></div>'
+            f'<div style="font-size:0.8em;color:#8b949e">:{port}</div>'
+            f'{dep_html}'
+            f'</div>'
+        )
+    return f'<div class="svc-grid">{"".join(cards)}</div>'
 
 
 def _milestone_html(milestones: list) -> str:
-    """Build HTML checklist for milestones."""
+    """Build styled milestone checklist."""
     if not milestones:
-        return "<em>No milestones yet</em>"
-    items = [f"<li>✅ {m}</li>" for m in milestones]
-    return f"<ul>{''.join(items)}</ul>"
+        return '<div style="color:#484f58;font-style:italic;padding:8px">No milestones yet</div>'
+    items = [f'<div class="milestone-item">✅ {m}</div>' for m in milestones]
+    return "".join(items)
 
 
 def _reward_plot(rewards: list) -> plt.Figure:
-    """Create a reward progress plot."""
+    """Create a dark-themed reward progress plot with gradient fill and milestone markers."""
+    plt.style.use('dark_background')
     fig, ax = plt.subplots(figsize=(8, 3))
-    ax.plot(range(1, len(rewards) + 1), rewards, 'b-o', markersize=6, linewidth=2)
-    ax.set_xlabel("Round")
-    ax.set_ylabel("Team Reward")
-    ax.set_title("Reward Progress")
-    ax.set_ylim(0, 1)
-    ax.grid(True, alpha=0.3)
-    ax.fill_between(range(1, len(rewards) + 1), rewards, alpha=0.2)
+    fig.patch.set_facecolor('#0d1117')
+    ax.set_facecolor('#0d1117')
+
+    x = list(range(1, len(rewards) + 1))
+    y = rewards
+
+    # Main line
+    ax.plot(x, y, color='#58a6ff', linewidth=2.5, marker='o', markersize=5,
+            markerfacecolor='#58a6ff', markeredgecolor='#0d1117', markeredgewidth=1.5, zorder=3)
+
+    # Gradient fill under the curve
+    if len(x) > 1:
+        ax.fill_between(x, y, alpha=0.15, color='#58a6ff')
+        # Subtle gradient effect with multiple fills
+        for alpha_val, offset in [(0.08, 0.02), (0.04, 0.05)]:
+            shifted = [max(0, v - offset) for v in y]
+            ax.fill_between(x, shifted, alpha=alpha_val, color='#58a6ff')
+
+    # Milestone markers at reward jumps
+    for i in range(1, len(y)):
+        if y[i] - y[i - 1] > 0.05:
+            ax.annotate('★', xy=(x[i], y[i]), fontsize=14, color='#FFD700',
+                        ha='center', va='bottom', fontweight='bold')
+
+    ax.set_xlabel("Round", color='#8b949e', fontsize=10)
+    ax.set_ylabel("Team Reward", color='#8b949e', fontsize=10)
+    ax.set_title("Reward Progress", color='#c9d1d9', fontsize=12, fontweight='bold', pad=10)
+    ax.set_ylim(-0.02, 1.05)
+    ax.tick_params(colors='#484f58')
+    ax.spines['bottom'].set_color('#21262d')
+    ax.spines['left'].set_color('#21262d')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.grid(True, alpha=0.1, color='#30363d')
+
     plt.tight_layout()
     return fig
 
@@ -164,23 +392,28 @@ def _reward_plot(rewards: list) -> plt.Figure:
 
 def start_episode(task_id: str, seed: int):
     global env, current_obs, round_num, chat_history, reward_history, milestone_list
+    task_key = _parse_task_key(task_id)
     env = WarRoomEnvironment()
-    current_obs = env.reset(task_id=task_id, seed=seed)
+    current_obs = env.reset(task_id=task_key, seed=seed)
     round_num = 0
     chat_history = []
     reward_history = []
     milestone_list = []
 
-    task_name = current_obs.metadata.get("task_name", task_id)
+    task_name = current_obs.metadata.get("task_name", task_key)
     difficulty = current_obs.metadata.get("difficulty", "?")
     max_rounds = current_obs.metadata.get("max_rounds", "?")
 
-    header = f'<div style="background:#1a1a2e;padding:12px;border-radius:8px;margin-bottom:8px"><h3 style="color:#ff4444;margin:0">🔧 INCIDENT WAR ROOM</h3><p style="color:#aaa;margin:4px 0">{task_name} ({difficulty}) — Max {max_rounds} rounds</p></div>'
+    header = (
+        f'<div class="episode-header">'
+        f'<h3>🔧 INCIDENT ACTIVE</h3>'
+        f'<div class="meta">{task_name} &middot; {difficulty} &middot; Max {max_rounds} rounds</div>'
+        f'</div>'
+    )
     chat_history.append(header)
 
     system_html = _service_status_html(env.state.simulated_system)
     chat_html = "\n".join(chat_history)
-
     fig = _reward_plot([0.0])
 
     return chat_html, system_html, fig, "Episode started. Click 'Next Round' to step.", _milestone_html([])
@@ -189,16 +422,17 @@ def start_episode(task_id: str, seed: int):
 def next_round(task_id: str):
     global current_obs, round_num, chat_history, reward_history, milestone_list
 
+    task_key = _parse_task_key(task_id)
+
     if current_obs is None:
         return "\n".join(chat_history), "<em>Start an episode first</em>", _reward_plot([0]), "Start an episode first.", _milestone_html([])
 
     if current_obs.done:
         return "\n".join(chat_history), _service_status_html(env.state.simulated_system), _reward_plot(reward_history), "Episode complete!", _milestone_html(milestone_list)
 
-    steps = HEURISTIC_STEPS.get(task_id, HEURISTIC_STEPS["task1"])
+    steps = HEURISTIC_STEPS.get(task_key, HEURISTIC_STEPS["task1"])
 
     if round_num >= len(steps):
-        # No more heuristic steps — send no-ops
         action = MultiAgentAction()
     else:
         step_data = steps[round_num]
@@ -208,8 +442,11 @@ def next_round(task_id: str):
     round_num += 1
     reward_history.append(current_obs.team_reward)
 
-    # Add round header
-    chat_history.append(f'<div style="color:#666;margin:8px 0;border-top:1px solid #333;padding-top:4px"><strong>Round {round_num}</strong></div>')
+    # Round separator with timestamp
+    ts = datetime.now().strftime("%H:%M:%S")
+    chat_history.append(
+        f'<div class="round-sep">── Round {round_num} &middot; {ts} ──</div>'
+    )
 
     # Add agent actions to chat
     for role in ["triage", "diagnosis", "remediation"]:
@@ -229,7 +466,14 @@ def next_round(task_id: str):
     status = f"Round {round_num} | Reward: {current_obs.team_reward:.3f}"
     if current_obs.done:
         score = current_obs.metadata.get("score", current_obs.team_reward)
-        chat_history.append(f'<div style="background:#0a3d0a;padding:12px;border-radius:8px;margin-top:8px"><h3 style="color:#0f0;margin:0">✅ INCIDENT RESOLVED</h3><p style="color:#aaa">Score: {score:.3f} | Rounds: {round_num} | Milestones: {len(milestone_list)}</p></div>')
+        milestone_count = len(milestone_list)
+        chat_history.append(
+            f'<div class="resolution-banner">'
+            f'<h2>🎉 INCIDENT RESOLVED</h2>'
+            f'<div class="score">{score:.3f}</div>'
+            f'<div style="color:#8b949e">{round_num} rounds &middot; {milestone_count} milestones</div>'
+            f'</div>'
+        )
         status = f"✅ RESOLVED — Score: {score:.3f}"
 
     chat_html = "\n".join(chat_history)
@@ -253,8 +497,24 @@ def auto_play(task_id: str, seed: int):
 
 # ---- Tab 2: Training Curves ----
 
+def _dark_training_plot(ax, fig):
+    """Apply dark theme styling to a training plot axis."""
+    fig.patch.set_facecolor('#0d1117')
+    ax.set_facecolor('#0d1117')
+    ax.tick_params(colors='#484f58')
+    ax.spines['bottom'].set_color('#21262d')
+    ax.spines['left'].set_color('#21262d')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.grid(True, alpha=0.1, color='#30363d')
+    ax.xaxis.label.set_color('#8b949e')
+    ax.yaxis.label.set_color('#8b949e')
+    ax.title.set_color('#c9d1d9')
+
+
 def load_training_metrics():
-    """Load and plot training metrics."""
+    """Load and plot training metrics with dark-themed charts."""
+    plt.style.use('dark_background')
     metrics_path = "outputs/war_room_training/metrics.json"
     if not os.path.exists(metrics_path):
         return None, None, None, None, "No training data found. Run training first."
@@ -270,48 +530,57 @@ def load_training_metrics():
 
     # Plot 1: Reward curve
     fig1, ax1 = plt.subplots(figsize=(10, 4))
-    ax1.plot(episodes, rewards, 'b-o', markersize=3, linewidth=1, alpha=0.7)
+    _dark_training_plot(ax1, fig1)
+    ax1.plot(episodes, rewards, color='#58a6ff', marker='o', markersize=3, linewidth=1, alpha=0.7)
+    ax1.fill_between(episodes, rewards, alpha=0.1, color='#58a6ff')
     if len(rewards) >= 5:
         rolling = [sum(rewards[max(0, i - 4):i + 1]) / min(i + 1, 5) for i in range(len(rewards))]
-        ax1.plot(episodes, rolling, 'r-', linewidth=2, label='5-ep rolling avg')
-        ax1.legend()
+        ax1.plot(episodes, rolling, color='#f85149', linewidth=2, label='5-ep rolling avg')
+        ax1.legend(facecolor='#161b22', edgecolor='#30363d', labelcolor='#c9d1d9')
+    # Milestone markers on reward jumps
+    for i in range(1, len(rewards)):
+        if rewards[i] - rewards[i - 1] > 0.1:
+            ax1.annotate('★', xy=(episodes[i], rewards[i]), fontsize=12, color='#FFD700',
+                         ha='center', va='bottom')
     ax1.set_xlabel("Episode")
     ax1.set_ylabel("Team Reward")
-    ax1.set_title("Reward Over Training Episodes")
+    ax1.set_title("Reward Over Training Episodes", fontweight='bold')
     ax1.set_ylim(0, 1)
-    ax1.grid(True, alpha=0.3)
     plt.tight_layout()
 
     # Plot 2: Rounds to resolve
     fig2, ax2 = plt.subplots(figsize=(10, 4))
-    ax2.plot(episodes, rounds_used, 'g-o', markersize=3, linewidth=1)
+    _dark_training_plot(ax2, fig2)
+    ax2.plot(episodes, rounds_used, color='#3fb950', marker='o', markersize=3, linewidth=1)
+    ax2.fill_between(episodes, rounds_used, alpha=0.1, color='#3fb950')
     ax2.set_xlabel("Episode")
     ax2.set_ylabel("Rounds Used")
-    ax2.set_title("Rounds to Resolve (↓ = more efficient)")
-    ax2.grid(True, alpha=0.3)
+    ax2.set_title("Rounds to Resolve (↓ = more efficient)", fontweight='bold')
     plt.tight_layout()
 
     # Plot 3: Milestones
     fig3, ax3 = plt.subplots(figsize=(10, 4))
-    ax3.bar(episodes, milestones, color='purple', alpha=0.7)
+    _dark_training_plot(ax3, fig3)
+    ax3.bar(episodes, milestones, color='#bc8cff', alpha=0.7, edgecolor='#8957e5', linewidth=0.5)
     ax3.set_xlabel("Episode")
     ax3.set_ylabel("Milestones")
-    ax3.set_title("Milestones Achieved Per Episode")
-    ax3.grid(True, alpha=0.3)
+    ax3.set_title("Milestones Achieved Per Episode", fontweight='bold')
     plt.tight_layout()
 
     # Plot 4: By task
     fig4, ax4 = plt.subplots(figsize=(10, 4))
+    _dark_training_plot(ax4, fig4)
     task_rewards = {}
     for t, r in zip(tasks, rewards):
         task_rewards.setdefault(t, []).append(r)
-    for tid, tr in sorted(task_rewards.items()):
-        ax4.bar(tid, sum(tr) / len(tr), alpha=0.7)
+    colors = ['#58a6ff', '#3fb950', '#d29922', '#f85149']
+    for idx, (tid, tr) in enumerate(sorted(task_rewards.items())):
+        c = colors[idx % len(colors)]
+        ax4.bar(tid, sum(tr) / len(tr), alpha=0.8, color=c, edgecolor=c, linewidth=0.5)
     ax4.set_xlabel("Task")
     ax4.set_ylabel("Avg Reward")
-    ax4.set_title("Average Reward by Task")
+    ax4.set_title("Average Reward by Task", fontweight='bold')
     ax4.set_ylim(0, 1)
-    ax4.grid(True, alpha=0.3)
     plt.tight_layout()
 
     avg = sum(rewards) / len(rewards) if rewards else 0
@@ -330,40 +599,57 @@ def run_training_sim(episodes: int):
 
 # ---- Build the app ----
 
-APP_THEME = gr.themes.Base(primary_hue="red", neutral_hue="slate")
-APP_CSS = """
-.chat-panel { max-height: 500px; overflow-y: auto; background: #0d1117; padding: 12px; border-radius: 8px; }
-.status-panel { background: #0d1117; padding: 12px; border-radius: 8px; }
-"""
-
-
 def build_app():
-    with gr.Blocks(title="Multi-Agent Incident War Room") as app:
-        gr.Markdown("# 🔧 Multi-Agent Incident War Room\n**Three AI agents cooperate to diagnose and fix production incidents.**")
+    # Pass css/theme via constructor for Gradio <6.0 compat; they also work in launch() for 6.0+
+    try:
+        app_kwargs = dict(title="Multi-Agent Incident War Room", css=CUSTOM_CSS,
+                          theme=gr.themes.Base(primary_hue="red", neutral_hue="slate"))
+    except Exception:
+        app_kwargs = dict(title="Multi-Agent Incident War Room")
+    with gr.Blocks(**app_kwargs) as app:
+
+        # Header banner
+        gr.HTML('''
+        <div class="war-room-header">
+            <h1>🔧 Multi-Agent Incident War Room</h1>
+            <p>Three AI agents with partial observability cooperate through a shared communication channel to diagnose and fix production incidents</p>
+        </div>
+        ''')
+
+        # How it works accordion
+        with gr.Accordion("💡 How it works", open=False):
+            gr.Markdown("""
+Each episode simulates a production incident. Three specialized agents — **Triage**, **Diagnosis**, and **Remediation** — each see different parts of the system and must communicate to resolve the issue.
+
+1. **Select a task** from the dropdown (each has a different difficulty and scenario)
+2. **Start the episode** to initialize the simulated infrastructure
+3. **Step through rounds** to watch the agents coordinate, or use **Auto-Play** to run the full episode
+4. Watch the **reward curve** climb as milestones are achieved
+            """)
 
         with gr.Tabs():
             # ---- Tab 1: War Room ----
             with gr.Tab("🔧 War Room"):
                 with gr.Row():
                     task_dropdown = gr.Dropdown(
-                        choices=["task1", "task2", "task3", "task4"],
-                        value="task1",
-                        label="Task",
+                        choices=list(TASK_DESCRIPTIONS.values()),
+                        value=TASK_DESCRIPTIONS["task1"],
+                        label="Incident Scenario",
                     )
-                    seed_input = gr.Number(value=42, label="Seed", precision=0)
+                    seed_input = gr.Number(value=42, label="Random Seed", precision=0)
 
                 with gr.Row():
-                    start_btn = gr.Button("▶️ Start Episode", variant="primary")
-                    next_btn = gr.Button("⏭️ Next Round")
-                    auto_btn = gr.Button("⏩ Auto-Play", variant="secondary")
+                    start_btn = gr.Button("▶️ Start Episode", variant="primary", size="lg")
+                    next_btn = gr.Button("⏭️ Next Round", size="lg")
+                    auto_btn = gr.Button("⏩ Auto-Play", variant="secondary", size="lg")
 
                 status_text = gr.Textbox(label="Status", interactive=False)
 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        chat_display = gr.HTML(label="Agent Chat", elem_classes=["chat-panel"])
+                        chat_display = gr.HTML(label="Agent Chat", elem_classes=["chat-container"])
                     with gr.Column(scale=1):
-                        service_display = gr.HTML(label="Services", elem_classes=["status-panel"])
+                        service_display = gr.HTML(label="Services")
                         milestone_display = gr.HTML(label="Milestones")
 
                 reward_plot = gr.Plot(label="Reward Progress")
@@ -461,4 +747,4 @@ This tests whether agents can model **false beliefs** held by other agents.
 
 if __name__ == "__main__":
     app = build_app()
-    app.launch(server_name="0.0.0.0", server_port=7860, share=False, theme=APP_THEME, css=APP_CSS)
+    app.launch(server_name="0.0.0.0", server_port=7860, share=False)
