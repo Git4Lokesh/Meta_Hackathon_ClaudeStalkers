@@ -28,6 +28,14 @@ from round2.war_room.belief_tracker import BeliefStateTracker
 from sre_env.server.simulated_system import SimulatedSystem
 from sre_env.server.command_parser import CommandParser
 
+# OpenEnv base class — graceful fallback if not installed
+try:
+    from openenv.core.env_server import Environment as OpenEnvBase
+except ImportError:
+    class OpenEnvBase:
+        """Stub when openenv-core is not installed."""
+        pass
+
 EXECUTIVE_PANIC_MESSAGES = [
     "🔥 CEO is asking for an update! Are we back up yet?! Revenue is dropping!",
     "⚠️ The board meeting is in 30 minutes. I need this fixed NOW. Have you tried restarting everything?",
@@ -38,7 +46,7 @@ EXECUTIVE_PANIC_MESSAGES = [
 ]
 
 
-class WarRoomEnvironment:
+class WarRoomEnvironment(OpenEnvBase):
     """Multi-Agent Incident War Room environment."""
 
     def __init__(self) -> None:

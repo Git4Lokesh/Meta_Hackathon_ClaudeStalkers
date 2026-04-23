@@ -119,6 +119,18 @@ Improvement:                +0.7940
 
 The most striking qualitative change: untrained agents blindly follow whatever Triage says, even when evidence contradicts it. Trained agents learn to say "I checked Redis and it looks fine — the real issue is the database password." That pushback is Theory of Mind in action.
 
+## Training Curves
+
+> Training curves will be generated on-site with A100 compute credits. Run `python round2/war_room/generate_charts.py` after training to produce these plots.
+
+<!-- After training, uncomment and update paths:
+![Reward Curve](outputs/war_room_grpo/training_curves.png)
+*Figure 1: Team reward over training episodes. Rolling 3-episode average shown in red.*
+
+![Baseline vs Trained](outputs/war_room_grpo/baseline_vs_trained.png)
+*Figure 2: Per-task score comparison between untrained baseline and GRPO-trained agent.*
+-->
+
 ## Training Pipeline
 
 Uses the official **TRL + OpenEnv `rollout_func` pattern** with 4 independent reward streams:
