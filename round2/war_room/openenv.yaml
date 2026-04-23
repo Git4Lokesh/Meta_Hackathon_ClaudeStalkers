@@ -3,4 +3,4 @@ name: war_room
 type: space
 runtime: fastapi
 app: round2.war_room.app:app
-port: 8000
+port: 7860

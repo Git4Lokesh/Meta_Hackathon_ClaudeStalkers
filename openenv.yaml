@@ -2,5 +2,5 @@ spec_version: 1
 name: sre_env
 type: space
 runtime: fastapi
-app: sre_env.server.app:app
-port: 8000
+app: round2.war_room.app:app
+port: 7860
