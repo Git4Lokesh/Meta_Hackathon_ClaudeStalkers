@@ -26,6 +26,7 @@ An OpenEnv-compliant multi-agent RL environment where three specialized SRE agen
 | Live Environment | [HF Spaces](https://huggingface.co/spaces/brodie1of1/war-room) |
 | Blog Post | [round2/war_room/blog_post.md](round2/war_room/blog_post.md) |
 | Training Script (Colab) | [round2/war_room/train_colab.py](round2/war_room/train_colab.py) |
+| Training Notebook | [round2/war_room/train_colab.ipynb](round2/war_room/train_colab.ipynb) |
 | T4 Quick Train | [round2/war_room/train_t4_quick.py](round2/war_room/train_t4_quick.py) |
 | Demo Comparison | [round2/war_room/demo_comparison.py](round2/war_room/demo_comparison.py) |
 | GitHub | [Git4Lokesh/Meta_Hackathon_ClaudeStalkers](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers) |
