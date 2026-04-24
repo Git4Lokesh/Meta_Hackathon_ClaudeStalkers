@@ -27,29 +27,43 @@ class ResetRequest(BaseModel):
 async def root():
     return HTMLResponse("""
     <html><head><title>Multi-Agent Incident War Room</title></head>
-    <body style="font-family:monospace;max-width:700px;margin:40px auto;padding:0 20px">
-    <h1>🔧 Multi-Agent Incident War Room</h1>
-    <p>Three AI agents cooperate to diagnose and fix production incidents.</p>
-    <h3>Agents</h3>
+    <body style="font-family:monospace;max-width:700px;margin:40px auto;padding:0 20px;background:#0d1117;color:#c9d1d9">
+    <h1>🔥 Multi-Agent Incident War Room</h1>
+    <p><b>Team ClaudeStalkers</b> — BITS Pilani Hyderabad<br>
+    Meta PyTorch OpenEnv Hackathon 2026</p>
+    <p>Three AI agents cooperate to diagnose and fix production incidents under partial observability, phantom alerts, and adversarial noise.</p>
+
+    <h3>Agents (role-based partial observability)</h3>
     <ul>
-    <li><b>Triage</b> — Monitors dashboard, escalates issues</li>
-    <li><b>Diagnosis</b> — Reads logs, identifies root causes</li>
-    <li><b>Remediation</b> — Fixes configs, restarts services</li>
+    <li>🚨 <b>Triage</b> — Dashboard, alerts, health metrics</li>
+    <li>🔎 <b>Diagnosis</b> — Log files, process table</li>
+    <li>🛠️ <b>Remediation</b> — Service status, config files, restart commands</li>
     </ul>
-    <h3>API</h3>
+
+    <h3>API Endpoints</h3>
     <ul>
-    <li><b>GET</b> <a href="/health">/health</a></li>
+    <li><b>GET</b> <a href="/health" style="color:#58a6ff">/health</a></li>
     <li><b>POST</b> /reset — {task_id, seed}</li>
     <li><b>POST</b> /step — MultiAgentAction</li>
-    <li><b>GET</b> <a href="/state">/state</a></li>
-    <li><b>GET</b> <a href="/docs">/docs</a> — Interactive docs</li>
+    <li><b>GET</b> <a href="/state" style="color:#58a6ff">/state</a></li>
+    <li><b>GET</b> <a href="/schema" style="color:#58a6ff">/schema</a> — JSON schemas</li>
+    <li><b>GET</b> <a href="/docs" style="color:#58a6ff">/docs</a> — Interactive Swagger docs</li>
     </ul>
-    <h3>Tasks</h3>
+
+    <h3>6 Escalating Tasks</h3>
     <ul>
-    <li><b>task1</b> (Easy) — Coordinated Service Restart</li>
-    <li><b>task2</b> (Medium) — Memory Leak with Misdirection</li>
-    <li><b>task3</b> (Hard) — Cascading Failure with Conflicting Info</li>
-    <li><b>task4</b> (Expert) — Simultaneous Incidents</li>
+    <li><b>task1</b> (Easy, 10 rounds) — Coordinated nginx restart</li>
+    <li><b>task2</b> (Medium, 15 rounds) — Memory leak + CPU red herring</li>
+    <li><b>task3</b> (Hard, 20 rounds) — Cascading DB failure + phantom Redis alerts (Theory of Mind)</li>
+    <li><b>task4</b> (Expert, 25 rounds) — Simultaneous incidents</li>
+    <li><b>task5</b> (Expert, 20 rounds) — Rogue insider threat</li>
+    <li><b>task6</b> (Expert, 25 rounds) — Blame game with conflicting reports</li>
+    </ul>
+
+    <h3>Links</h3>
+    <ul>
+    <li><a href="https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers" style="color:#58a6ff">GitHub Repo</a></li>
+    <li><a href="https://huggingface.co/spaces/brodie1of1/war-room" style="color:#58a6ff">HF Spaces</a></li>
     </ul>
     </body></html>
     """)
@@ -88,7 +102,7 @@ async def schema():
 
 
 def main():
-    uvicorn.run("round2.war_room.app:app", host="0.0.0.0", port=8000)
+    uvicorn.run("round2.war_room.app:app", host="0.0.0.0", port=7860)
 
 
 if __name__ == "__main__":

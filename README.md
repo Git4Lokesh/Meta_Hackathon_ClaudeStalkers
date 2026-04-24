@@ -15,6 +15,11 @@ tags:
 
 # 🔥 Multi-Agent Incident War Room
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/round2/war_room/train_colab.ipynb)
+[![HF Spaces](https://img.shields.io/badge/🤗%20Spaces-War%20Room-orange)](https://huggingface.co/spaces/brodie1of1/war-room)
+[![Tests](https://img.shields.io/badge/tests-146%20passing-brightgreen)](tests/)
+[![OpenEnv](https://img.shields.io/badge/OpenEnv-compliant-blue)](https://github.com/meta-pytorch/OpenEnv)
+
 **Three AI agents. One war room. Zero downtime.**
 
 An OpenEnv-compliant multi-agent RL environment where three specialized SRE agents (Triage, Diagnosis, Remediation) cooperate through a shared communication channel to diagnose and fix production infrastructure failures under partial observability, adversarial noise, and phantom alerts designed to test Theory of Mind.
