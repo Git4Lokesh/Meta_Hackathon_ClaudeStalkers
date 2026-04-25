@@ -10,10 +10,18 @@ build/
 
 # Training outputs (only commit final metrics.json + .png plots manually)
 outputs/sft_dataset*.json
-outputs/war_room_grpo/metrics.json
 outputs/war_room_grpo/final_model/
 outputs/war_room_grpo/checkpoint-*
 outputs/war_room_sft/
 outputs/war_room_grpo_t4/
+# Large model weights — pull from HF Hub (brodie1of1/war-room-grpo-adapter)
+outputs/war_room_grpo/adapter_model.safetensors
+outputs/war_room_grpo/tokenizer.json
+outputs/war_room_grpo/vocab.json
+outputs/war_room_grpo/merges.txt
+outputs/war_room_grpo/*.safetensors
+# Commit the small, pitch-relevant files:
 !outputs/war_room_grpo/*.png
+!outputs/war_room_grpo/metrics.json
+!outputs/war_room_grpo/adapter_config.json
 .venv/
