@@ -39,8 +39,10 @@ git clone --depth 1 --branch main \
 cd /workspace/repo
 
 echo "=== [2/5] Install dependencies ==="
+# Pin trl<0.19 so FSDPModule import (torch.distributed.fsdp.fully_shard,
+# new in torch 2.5) is not required. Container ships torch 2.4.
 pip install --quiet --no-cache-dir \
-    "trl>=0.15.0" "peft>=0.14.0" "transformers>=4.46.0" \
+    "trl>=0.15.0,<0.19" "peft>=0.14.0" "transformers>=4.46.0,<4.50" \
     datasets accelerate bitsandbytes \
     fastapi pydantic uvicorn matplotlib
 pip install --quiet --no-cache-dir -e .
