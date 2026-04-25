@@ -90,6 +90,28 @@ if [ -f outputs/war_room_grpo/metrics.json ]; then
     cat outputs/war_room_grpo/metrics.json
 fi
 
+echo "=== [6/6] Push artifacts to HF Hub ==="
+# Upload LoRA adapter + metrics + charts to a model repo we can pull
+# from locally. Repo name is derived from the HF username via whoami.
+python - <<'PY'
+import os, sys
+from huggingface_hub import HfApi, create_repo
+api = HfApi(token=os.environ.get("HF_TOKEN"))
+user = api.whoami()["name"]
+repo_id = f"{user}/war-room-grpo-adapter"
+print(f"Pushing to {repo_id}...")
+create_repo(repo_id, repo_type="model", exist_ok=True, token=os.environ.get("HF_TOKEN"))
+api.upload_folder(
+    folder_path="outputs/war_room_grpo",
+    repo_id=repo_id,
+    repo_type="model",
+    commit_message="GRPO adapter + training curves from HF Jobs run",
+    token=os.environ.get("HF_TOKEN"),
+    ignore_patterns=["checkpoint-*/**"],  # skip intermediate checkpoints
+)
+print(f"✅ Artifacts pushed: https://huggingface.co/{repo_id}")
+PY
+
 # NOTE: Job output is persisted in the HF Jobs artifact store.
 # Download with: hf jobs logs <JOB_ID> > training.log
 # The LoRA adapter is in outputs/war_room_grpo/ — to get it back to
