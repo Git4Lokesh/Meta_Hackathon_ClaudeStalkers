@@ -416,34 +416,49 @@ def _milestone_html(milestones: list) -> str:
     return "".join(items)
 
 
+def _empty_card(title: str, hint: str) -> str:
+    return (
+        "<div style='background:#161b22;border:1px dashed #30363d;border-radius:8px;padding:10px'>"
+        f"<div style='color:#c9d1d9;font-weight:700;margin-bottom:4px'>{title}</div>"
+        f"<div style='color:#8b949e;font-size:0.85em;font-style:italic'>{hint}</div>"
+        "</div>"
+    )
+
+
+COMPONENT_LABELS = {
+    "milestone_credit": "Milestone credit",
+    "penalty_total": "Penalties",
+    "communication_bonus": "Comm bonus",
+    "raw_score": "Raw score",
+    "final_score": "Final (clamped)",
+}
+
+
 def _reward_inspector_html(obs) -> str:
     """Render current reward component breakdown."""
     if obs is None:
-        return (
-            "<div style='background:#161b22;border:1px dashed #30363d;border-radius:8px;"
-            "padding:12px;color:#8b949e;font-size:0.85em'>"
-            "<div style='color:#c9d1d9;font-weight:700;margin-bottom:6px'>Reward Inspector</div>"
-            "Every step, this panel shows the live reward breakdown: "
-            "<code>milestone_credit − penalty_total + communication_bonus</code>. "
-            "Start an episode and step forward to watch each action change the signal."
-            "</div>"
+        return _empty_card(
+            "Reward Inspector",
+            "Start an episode and step a round — components will appear here.",
         )
     metadata = getattr(obs, "metadata", {}) or {}
     components = metadata.get("reward_components", {})
     penalties = metadata.get("penalty_reasons", [])
     if not components:
-        return (
-            "<div style='background:#161b22;border:1px dashed #30363d;border-radius:8px;"
-            "padding:12px;color:#8b949e;font-size:0.85em'>"
-            "<div style='color:#c9d1d9;font-weight:700;margin-bottom:6px'>Reward Inspector</div>"
-            "Reward components are available on this environment but not populated yet. "
-            "Step forward one round to populate."
-            "</div>"
+        return _empty_card(
+            "Reward Inspector",
+            "Step at least one round to populate reward components.",
         )
-    rows = [
-        f"<tr><td style='padding:3px 8px'>{k}</td><td style='padding:3px 8px;text-align:right'><code>{v:.3f}</code></td></tr>"
-        for k, v in components.items()
-    ]
+
+    def _row(k: str, v: float) -> str:
+        label = COMPONENT_LABELS.get(k, k)
+        sign_color = "#3fb950" if v >= 0 and k != "penalty_total" else "#f85149" if k == "penalty_total" and v > 0 else "#c9d1d9"
+        return (
+            f"<tr><td style='padding:3px 8px'>{label}</td>"
+            f"<td style='padding:3px 8px;text-align:right;color:{sign_color}'><code>{v:.3f}</code></td></tr>"
+        )
+
+    rows = [_row(k, v) for k, v in components.items()]
     penalty_text = ", ".join(penalties) if penalties else "none"
     return (
         "<div style='background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px'>"
@@ -456,10 +471,52 @@ def _reward_inspector_html(obs) -> str:
     )
 
 
+def _deception_banner_html() -> str:
+    """Show a banner when phantom alerts are active or detected (Theory of Mind cue)."""
+    global env
+    tracker = getattr(env, "_belief_tracker", None) if env else None
+    if not tracker:
+        return ""
+    try:
+        dec = tracker.get_deception_score()
+    except Exception:
+        return ""
+    total = dec.get("phantom_alerts_total", 0)
+    if not total:
+        return ""
+    detected = dec.get("phantom_alerts_detected", 0)
+    chased = dec.get("phantom_alerts_chased", 0)
+    score = dec.get("deception_score", 0.0)
+
+    if detected > 0:
+        bg = "#0a2a14"
+        border = "#3fb950"
+        title = "✅ Phantom alert detected — agents pushed back"
+    elif chased > 0:
+        bg = "#3d1f0a"
+        border = "#d29922"
+        title = "⚠️ Agents are chasing a phantom alert"
+    else:
+        bg = "#1a1a2e"
+        border = "#58a6ff"
+        title = "🧠 Phantom alert active — Theory of Mind under test"
+
+    return (
+        f"<div style='background:{bg};border-left:4px solid {border};border-radius:6px;padding:8px 12px;margin:6px 0'>"
+        f"<div style='color:#c9d1d9;font-weight:700;font-size:0.9em'>{title}</div>"
+        f"<div style='color:#8b949e;font-size:0.78em;margin-top:2px'>"
+        f"detected {detected}/{total} · chased {chased} · deception score <code>{score:.2f}</code>"
+        "</div></div>"
+    )
+
+
 def _round_trace_html() -> str:
     """Render round-by-round interaction trace."""
     if not round_trace:
-        return "<div style='color:#8b949e;font-style:italic;padding:8px'>No rounds yet.</div>"
+        return _empty_card(
+            "Live Incident Playback",
+            "Each row will show what Triage / Diagnosis / Remediation did and the resulting reward.",
+        )
     rows = []
     for item in round_trace[-12:]:
         rows.append(
@@ -693,23 +750,18 @@ def _belief_state_html():
     if env and hasattr(env, '_belief_tracker') and env._belief_tracker:
         snapshot = env._belief_tracker.get_snapshot()
         if snapshot.get("round", 0) == 0 and not snapshot.get("agents", {}):
-            return (
-                "<div style='background:#161b22;border:1px dashed #30363d;border-radius:8px;"
-                "padding:12px;color:#8b949e;font-size:0.85em'>"
-                "<div style='color:#c9d1d9;font-weight:700;margin-bottom:6px'>🧠 Theory of Mind Tracker</div>"
+            return _empty_card(
+                "🧠 Theory of Mind Tracker",
                 "Every round, this engine records what each agent believes about every "
                 "service and compares it against ground truth. Agents that push back on "
-                "false beliefs score on the <i>Deception Resistance</i> metric. Start an "
-                "episode to see beliefs evolve."
-                "</div>"
+                "false beliefs score on the Deception Resistance metric. Start an "
+                "episode to see beliefs evolve.",
             )
-        return env._belief_tracker.format_html()
-    return (
-        "<div style='background:#161b22;border:1px dashed #30363d;border-radius:8px;"
-        "padding:12px;color:#8b949e;font-size:0.85em'>"
-        "<div style='color:#c9d1d9;font-weight:700;margin-bottom:6px'>🧠 Theory of Mind Tracker</div>"
-        "No Belief State Available. Start an episode."
-        "</div>"
+        banner = _deception_banner_html()
+        return banner + env._belief_tracker.format_html()
+    return _empty_card(
+        "🧠 Theory of Mind Tracker",
+        "No Belief State Available. Start an episode.",
     )
 
 
@@ -779,15 +831,11 @@ def start_episode(task_id: str, seed: int, use_agent_mode: bool = False,
     fig = _reward_plot([0.0])
     empty_flow = _comm_flow_graph([])
     empty_timeline = _comm_timeline([], 10)
-    thought_html = (
-        "<div style='background:#161b22;border:1px dashed #30363d;border-radius:8px;"
-        "padding:12px;color:#8b949e;font-size:0.85em'>"
-        "<div style='color:#bc8cff;font-weight:700;margin-bottom:6px'>💭 Agent Brain Scanner</div>"
-        "When Agent Mode is enabled, each agent produces a chain-of-thought inside "
-        "<code>&lt;internal_thought&gt;</code> tags. We parse it out and render it here so "
-        "you can read *why* the agent chose its command this round. Base models often show "
-        "panic heuristics; trained agents show evidence checks."
-        "</div>"
+    thought_html = _empty_card(
+        "💭 Agent Brain Scanner",
+        "Enable Agent Mode and run a round to see each agent's structured "
+        "rationale (thought → command → message). Base models often show "
+        "panic heuristics; trained agents show evidence checks.",
     )
 
     return chat_html, system_html, fig, "Episode started. Click 'Next Round' to step.", _milestone_html([]), empty_flow, empty_timeline, _belief_state_html(), thought_html, _reward_inspector_html(current_obs), _round_trace_html()

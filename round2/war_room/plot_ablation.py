@@ -1,14 +1,7 @@
-"""Plot the reward ablation results as a grouped bar chart.
+"""Generate ablation comparison chart from ablation_results.json.
 
-Reads outputs/reward_ablation/ablation_results.json produced by
-reward_ablation.py and emits outputs/reward_ablation/ablation_results.png
-suitable for the pitch deck and the README.
-
-The chart groups by reward configuration (full / milestone_only / no_comm_bonus
-/ no_anti_hack) with one bar per task. Dark theme to match the Gradio UI.
-
-Usage:
-    PYTHONPATH=. python round2/war_room/plot_ablation.py
+Produces a grouped bar chart per task plus an overall avg-score bar chart,
+saved to the same output directory.
 """
 
 from __future__ import annotations
@@ -16,136 +9,120 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from collections import defaultdict
+from typing import Any
 
-import matplotlib
-
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
+import numpy as np
 
 CONFIG_ORDER = ["full", "milestone_only", "no_comm_bonus", "no_anti_hack"]
+CONFIG_COLORS = {
+    "full": "#22c55e",
+    "milestone_only": "#f59e0b",
+    "no_comm_bonus": "#ef4444",
+    "no_anti_hack": "#3b82f6",
+}
 CONFIG_LABELS = {
     "full": "Full reward",
-    "milestone_only": "Milestones only",
+    "milestone_only": "Milestone only",
     "no_comm_bonus": "No comm bonus",
-    "no_anti_hack": "No anti-hack gate",
-}
-TASK_ORDER = ["task1", "task2", "task3", "task4"]
-TASK_LABELS = {
-    "task1": "T1 · Restart",
-    "task2": "T2 · Leak",
-    "task3": "T3 · Cascade",
-    "task4": "T4 · Parallel",
-}
-TASK_COLORS = {
-    "task1": "#58a6ff",
-    "task2": "#3fb950",
-    "task3": "#d29922",
-    "task4": "#f85149",
+    "no_anti_hack": "No anti-hack",
 }
 
 
-def _aggregate(rows: list[dict]) -> dict[str, dict[str, float]]:
-    """Return {config: {task: avg_score}} from the raw ablation rows."""
-    bucket: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
-    for row in rows:
-        bucket[row["config"]][row["task"]].append(float(row["score"]))
-    return {
-        cfg: {task: sum(scores) / len(scores) for task, scores in by_task.items()}
-        for cfg, by_task in bucket.items()
-    }
-
-
-def plot(input_path: str, output_path: str) -> None:
-    with open(input_path) as f:
-        payload = json.load(f)
-    rows = payload["rows"]
-
-    agg = _aggregate(rows)
+def _per_task_chart(summary: dict[str, Any], out_path: str) -> None:
+    tasks = sorted({t for cfg in summary.values() for t in cfg["per_task_avg_score"].keys()})
+    x = np.arange(len(tasks))
+    width = 0.2
 
     plt.style.use("dark_background")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    fig.patch.set_facecolor("#0d1117")
-    ax.set_facecolor("#0d1117")
+    fig, ax = plt.subplots(figsize=(9, 5))
 
-    n_configs = len(CONFIG_ORDER)
-    n_tasks = len(TASK_ORDER)
-    group_width = 0.72
-    bar_width = group_width / n_tasks
-
-    x_positions = list(range(n_configs))
-    for i, task in enumerate(TASK_ORDER):
-        heights = [agg.get(cfg, {}).get(task, 0.0) for cfg in CONFIG_ORDER]
-        offsets = [x + (i - (n_tasks - 1) / 2) * bar_width for x in x_positions]
-        ax.bar(
-            offsets,
-            heights,
-            bar_width,
-            label=TASK_LABELS[task],
-            color=TASK_COLORS[task],
-            edgecolor="#0d1117",
-            linewidth=0.5,
+    for i, cfg in enumerate(CONFIG_ORDER):
+        if cfg not in summary:
+            continue
+        scores = [summary[cfg]["per_task_avg_score"].get(t, 0.0) for t in tasks]
+        offset = (i - (len(CONFIG_ORDER) - 1) / 2) * width
+        bars = ax.bar(
+            x + offset,
+            scores,
+            width,
+            label=CONFIG_LABELS[cfg],
+            color=CONFIG_COLORS[cfg],
+            edgecolor="#0a0a1a",
+            linewidth=0.6,
         )
-        for xi, h in zip(offsets, heights):
+        for b, s in zip(bars, scores):
             ax.text(
-                xi,
-                h + 0.02,
-                f"{h:.2f}",
-                color="#c9d1d9",
+                b.get_x() + b.get_width() / 2,
+                s + 0.01,
+                f"{s:.2f}",
                 ha="center",
                 va="bottom",
-                fontsize=8,
+                fontsize=7,
+                color="#c9d1d9",
             )
 
-    ax.set_xticks(x_positions)
-    ax.set_xticklabels([CONFIG_LABELS[c] for c in CONFIG_ORDER], color="#c9d1d9")
-    ax.set_ylabel("Average team score (0–1)", color="#8b949e")
-    ax.set_title(
-        "Reward ablation — scripted expert policy, 3 seeds × 4 tasks",
-        color="#c9d1d9",
-        fontweight="bold",
-        pad=12,
-    )
+    ax.set_xticks(x)
+    ax.set_xticklabels(tasks)
     ax.set_ylim(0, 1.05)
-    ax.tick_params(colors="#484f58")
-    ax.spines["bottom"].set_color("#21262d")
-    ax.spines["left"].set_color("#21262d")
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.grid(True, alpha=0.12, color="#30363d", axis="y")
+    ax.set_ylabel("Avg episode score (0–1)")
+    ax.set_xlabel("Task")
+    ax.set_title("Reward Ablation: per-task average score (fixed seeds, optimal heuristic)")
+    ax.grid(True, axis="y", alpha=0.2)
+    ax.legend(loc="lower right", framealpha=0.85)
 
-    legend = ax.legend(
-        facecolor="#161b22",
-        edgecolor="#30363d",
-        labelcolor="#c9d1d9",
-        ncol=n_tasks,
-        loc="upper right",
-    )
-    for text in legend.get_texts():
-        text.set_color("#c9d1d9")
-
-    plt.tight_layout()
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path, dpi=140, facecolor=fig.get_facecolor())
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
     plt.close(fig)
-    print(f"Saved: {output_path}")
+
+
+def _overall_chart(summary: dict[str, Any], out_path: str) -> None:
+    plt.style.use("dark_background")
+    fig, ax = plt.subplots(figsize=(7, 4))
+
+    cfgs = [c for c in CONFIG_ORDER if c in summary]
+    scores = [summary[c]["avg_score"] for c in cfgs]
+    colors = [CONFIG_COLORS[c] for c in cfgs]
+    labels = [CONFIG_LABELS[c] for c in cfgs]
+
+    bars = ax.bar(labels, scores, color=colors, edgecolor="#0a0a1a", linewidth=0.6)
+    for b, s in zip(bars, scores):
+        ax.text(
+            b.get_x() + b.get_width() / 2,
+            s + 0.01,
+            f"{s:.3f}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            color="#c9d1d9",
+        )
+
+    ax.set_ylim(0, 1.05)
+    ax.set_ylabel("Avg episode score (0–1)")
+    ax.set_title("Reward Ablation: overall average score across tasks/seeds")
+    ax.grid(True, axis="y", alpha=0.2)
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plot reward ablation results")
-    parser.add_argument(
-        "--input",
-        default="outputs/reward_ablation/ablation_results.json",
-        help="Path to ablation JSON from reward_ablation.py",
-    )
-    parser.add_argument(
-        "--output",
-        default="outputs/reward_ablation/ablation_results.png",
-        help="Output PNG path",
-    )
+    parser.add_argument("--input", default="outputs/reward_ablation/ablation_results.json")
+    parser.add_argument("--output-dir", default="outputs/reward_ablation")
     args = parser.parse_args()
-    plot(args.input, args.output)
+
+    with open(args.input) as f:
+        data = json.load(f)
+    summary = data["summary"]
+
+    os.makedirs(args.output_dir, exist_ok=True)
+    per_task_path = os.path.join(args.output_dir, "ablation_per_task.png")
+    overall_path = os.path.join(args.output_dir, "ablation_overall.png")
+    _per_task_chart(summary, per_task_path)
+    _overall_chart(summary, overall_path)
+    print(json.dumps({"per_task": per_task_path, "overall": overall_path}, indent=2))
 
 
 if __name__ == "__main__":
