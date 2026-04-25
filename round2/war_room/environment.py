@@ -290,11 +290,13 @@ class WarRoomEnvironment(OpenEnvBase):
             "task_id": self._task_id,
             "round": self._round_number,
             "max_rounds": self._max_rounds,
+            "reward_components": reward_result.reward_components,
+            "penalty_reasons": reward_result.penalty_reasons,
+            "penalties_applied": reward_result.penalties_applied,
         }
         if self._done:
             metadata["score"] = reward_result.team_reward
             metadata["milestones_achieved"] = reward_result.milestones_achieved
-            metadata["penalties_applied"] = reward_result.penalties_applied
             metadata["credit_assignment"] = reward_result.credit_assignment
             metadata["adaptive_difficulty"] = self._performance_tracker.summary()
             # Include Belief State and Deception Score
@@ -376,6 +378,26 @@ class WarRoomEnvironment(OpenEnvBase):
         self._alert_engine.evaluate(self._system)
 
         return f"💥 Chaos injected: killed {target} (PID {pid})"
+
+    def inject_external_message(
+        self,
+        content: str,
+        from_agent: str = "executive",
+        to_agent: str = "all",
+    ) -> str:
+        """Inject an external message into the communication channel."""
+        if self._system is None or self._channel is None:
+            return "Cannot inject message: no active episode."
+        payload = content.strip()
+        if not payload:
+            return "Cannot inject message: empty content."
+        self._channel.send(
+            from_agent=from_agent,
+            to_agent=to_agent,
+            content=payload,
+            timestamp=self._system.current_time,
+        )
+        return f"Injected message from {from_agent} to {to_agent}."
 
     @property
     def state(self) -> WarRoomState:

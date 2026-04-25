@@ -1,0 +1,482 @@
+{
+  "rows": [
+    {
+      "config": "full",
+      "task": "task1",
+      "seed": 7,
+      "score": 0.99,
+      "rounds": 4,
+      "milestones": 5,
+      "resolved": true
+    },
+    {
+      "config": "full",
+      "task": "task1",
+      "seed": 42,
+      "score": 0.99,
+      "rounds": 4,
+      "milestones": 5,
+      "resolved": true
+    },
+    {
+      "config": "full",
+      "task": "task1",
+      "seed": 99,
+      "score": 0.99,
+      "rounds": 4,
+      "milestones": 5,
+      "resolved": true
+    },
+    {
+      "config": "full",
+      "task": "task2",
+      "seed": 7,
+      "score": 0.46,
+      "rounds": 15,
+      "milestones": 5,
+      "resolved": false
+    },
+    {
+      "config": "full",
+      "task": "task2",
+      "seed": 42,
+      "score": 0.46,
+      "rounds": 15,
+      "milestones": 5,
+      "resolved": false
+    },
+    {
+      "config": "full",
+      "task": "task2",
+      "seed": 99,
+      "score": 0.46,
+      "rounds": 15,
+      "milestones": 5,
+      "resolved": false
+    },
+    {
+      "config": "full",
+      "task": "task3",
+      "seed": 7,
+      "score": 0.88,
+      "rounds": 6,
+      "milestones": 9,
+      "resolved": true
+    },
+    {
+      "config": "full",
+      "task": "task3",
+      "seed": 42,
+      "score": 0.88,
+      "rounds": 6,
+      "milestones": 9,
+      "resolved": true
+    },
+    {
+      "config": "full",
+      "task": "task3",
+      "seed": 99,
+      "score": 0.88,
+      "rounds": 6,
+      "milestones": 9,
+      "resolved": true
+    },
+    {
+      "config": "full",
+      "task": "task4",
+      "seed": 7,
+      "score": 0.93,
+      "rounds": 5,
+      "milestones": 8,
+      "resolved": true
+    },
+    {
+      "config": "full",
+      "task": "task4",
+      "seed": 42,
+      "score": 0.93,
+      "rounds": 5,
+      "milestones": 8,
+      "resolved": true
+    },
+    {
+      "config": "full",
+      "task": "task4",
+      "seed": 99,
+      "score": 0.93,
+      "rounds": 5,
+      "milestones": 8,
+      "resolved": true
+    },
+    {
+      "config": "milestone_only",
+      "task": "task1",
+      "seed": 7,
+      "score": 0.99,
+      "rounds": 4,
+      "milestones": 5,
+      "resolved": true
+    },
+    {
+      "config": "milestone_only",
+      "task": "task1",
+      "seed": 42,
+      "score": 0.99,
+      "rounds": 4,
+      "milestones": 5,
+      "resolved": true
+    },
+    {
+      "config": "milestone_only",
+      "task": "task1",
+      "seed": 99,
+      "score": 0.99,
+      "rounds": 4,
+      "milestones": 5,
+      "resolved": true
+    },
+    {
+      "config": "milestone_only",
+      "task": "task2",
+      "seed": 7,
+      "score": 0.9,
+      "rounds": 15,
+      "milestones": 5,
+      "resolved": false
+    },
+    {
+      "config": "milestone_only",
+      "task": "task2",
+      "seed": 42,
+      "score": 0.9,
+      "rounds": 15,
+      "milestones": 5,
+      "resolved": false
+    },
+    {
+      "config": "milestone_only",
+      "task": "task2",
+      "seed": 99,
+      "score": 0.9,
+      "rounds": 15,
+      "milestones": 5,
+      "resolved": false
+    },
+    {
+      "config": "milestone_only",
+      "task": "task3",
+      "seed": 7,
+      "score": 0.99,
+      "rounds": 6,
+      "milestones": 9,
+      "resolved": true
+    },
+    {
+      "config": "milestone_only",
+      "task": "task3",
+      "seed": 42,
+      "score": 0.99,
+      "rounds": 6,
+      "milestones": 9,
+      "resolved": true
+    },
+    {
+      "config": "milestone_only",
+      "task": "task3",
+      "seed": 99,
+      "score": 0.99,
+      "rounds": 6,
+      "milestones": 9,
+      "resolved": true
+    },
+    {
+      "config": "milestone_only",
+      "task": "task4",
+      "seed": 7,
+      "score": 0.99,
+      "rounds": 5,
+      "milestones": 8,
+      "resolved": true
+    },
+    {
+      "config": "milestone_only",
+      "task": "task4",
+      "seed": 42,
+      "score": 0.99,
+      "rounds": 5,
+      "milestones": 8,
+      "resolved": true
+    },
+    {
+      "config": "milestone_only",
+      "task": "task4",
+      "seed": 99,
+      "score": 0.99,
+      "rounds": 5,
+      "milestones": 8,
+      "resolved": true
+    },
+    {
+      "config": "no_comm_bonus",
+      "task": "task1",
+      "seed": 7,
+      "score": 0.88,
+      "rounds": 4,
+      "milestones": 5,
+      "resolved": true
+    },
+    {
+      "config": "no_comm_bonus",
+      "task": "task1",
+      "seed": 42,
+      "score": 0.88,
+      "rounds": 4,
+      "milestones": 5,
+      "resolved": true
+    },
+    {
+      "config": "no_comm_bonus",
+      "task": "task1",
+      "seed": 99,
+      "score": 0.88,
+      "rounds": 4,
+      "milestones": 5,
+      "resolved": true
+    },
+    {
+      "config": "no_comm_bonus",
+      "task": "task2",
+      "seed": 7,
+      "score": 0.36,
+      "rounds": 15,
+      "milestones": 5,
+      "resolved": false
+    },
+    {
+      "config": "no_comm_bonus",
+      "task": "task2",
+      "seed": 42,
+      "score": 0.36,
+      "rounds": 15,
+      "milestones": 5,
+      "resolved": false
+    },
+    {
+      "config": "no_comm_bonus",
+      "task": "task2",
+      "seed": 99,
+      "score": 0.36,
+      "rounds": 15,
+      "milestones": 5,
+      "resolved": false
+    },
+    {
+      "config": "no_comm_bonus",
+      "task": "task3",
+      "seed": 7,
+      "score": 0.83,
+      "rounds": 6,
+      "milestones": 9,
+      "resolved": true
+    },
+    {
+      "config": "no_comm_bonus",
+      "task": "task3",
+      "seed": 42,
+      "score": 0.83,
+      "rounds": 6,
+      "milestones": 9,
+      "resolved": true
+    },
+    {
+      "config": "no_comm_bonus",
+      "task": "task3",
+      "seed": 99,
+      "score": 0.83,
+      "rounds": 6,
+      "milestones": 9,
+      "resolved": true
+    },
+    {
+      "config": "no_comm_bonus",
+      "task": "task4",
+      "seed": 7,
+      "score": 0.88,
+      "rounds": 5,
+      "milestones": 8,
+      "resolved": true
+    },
+    {
+      "config": "no_comm_bonus",
+      "task": "task4",
+      "seed": 42,
+      "score": 0.88,
+      "rounds": 5,
+      "milestones": 8,
+      "resolved": true
+    },
+    {
+      "config": "no_comm_bonus",
+      "task": "task4",
+      "seed": 99,
+      "score": 0.88,
+      "rounds": 5,
+      "milestones": 8,
+      "resolved": true
+    },
+    {
+      "config": "no_anti_hack",
+      "task": "task1",
+      "seed": 7,
+      "score": 0.99,
+      "rounds": 4,
+      "milestones": 5,
+      "resolved": true
+    },
+    {
+      "config": "no_anti_hack",
+      "task": "task1",
+      "seed": 42,
+      "score": 0.99,
+      "rounds": 4,
+      "milestones": 5,
+      "resolved": true
+    },
+    {
+      "config": "no_anti_hack",
+      "task": "task1",
+      "seed": 99,
+      "score": 0.99,
+      "rounds": 4,
+      "milestones": 5,
+      "resolved": true
+    },
+    {
+      "config": "no_anti_hack",
+      "task": "task2",
+      "seed": 7,
+      "score": 0.46,
+      "rounds": 15,
+      "milestones": 5,
+      "resolved": false
+    },
+    {
+      "config": "no_anti_hack",
+      "task": "task2",
+      "seed": 42,
+      "score": 0.46,
+      "rounds": 15,
+      "milestones": 5,
+      "resolved": false
+    },
+    {
+      "config": "no_anti_hack",
+      "task": "task2",
+      "seed": 99,
+      "score": 0.46,
+      "rounds": 15,
+      "milestones": 5,
+      "resolved": false
+    },
+    {
+      "config": "no_anti_hack",
+      "task": "task3",
+      "seed": 7,
+      "score": 0.88,
+      "rounds": 6,
+      "milestones": 9,
+      "resolved": true
+    },
+    {
+      "config": "no_anti_hack",
+      "task": "task3",
+      "seed": 42,
+      "score": 0.88,
+      "rounds": 6,
+      "milestones": 9,
+      "resolved": true
+    },
+    {
+      "config": "no_anti_hack",
+      "task": "task3",
+      "seed": 99,
+      "score": 0.88,
+      "rounds": 6,
+      "milestones": 9,
+      "resolved": true
+    },
+    {
+      "config": "no_anti_hack",
+      "task": "task4",
+      "seed": 7,
+      "score": 0.93,
+      "rounds": 5,
+      "milestones": 8,
+      "resolved": true
+    },
+    {
+      "config": "no_anti_hack",
+      "task": "task4",
+      "seed": 42,
+      "score": 0.93,
+      "rounds": 5,
+      "milestones": 8,
+      "resolved": true
+    },
+    {
+      "config": "no_anti_hack",
+      "task": "task4",
+      "seed": 99,
+      "score": 0.93,
+      "rounds": 5,
+      "milestones": 8,
+      "resolved": true
+    }
+  ],
+  "summary": {
+    "full": {
+      "avg_score": 0.815,
+      "avg_rounds": 7.5,
+      "resolved_rate": 0.75,
+      "per_task_avg_score": {
+        "task1": 0.99,
+        "task2": 0.46,
+        "task3": 0.88,
+        "task4": 0.93
+      }
+    },
+    "milestone_only": {
+      "avg_score": 0.9675,
+      "avg_rounds": 7.5,
+      "resolved_rate": 0.75,
+      "per_task_avg_score": {
+        "task1": 0.99,
+        "task2": 0.9,
+        "task3": 0.99,
+        "task4": 0.99
+      }
+    },
+    "no_comm_bonus": {
+      "avg_score": 0.7375,
+      "avg_rounds": 7.5,
+      "resolved_rate": 0.75,
+      "per_task_avg_score": {
+        "task1": 0.88,
+        "task2": 0.36,
+        "task3": 0.83,
+        "task4": 0.88
+      }
+    },
+    "no_anti_hack": {
+      "avg_score": 0.815,
+      "avg_rounds": 7.5,
+      "resolved_rate": 0.75,
+      "per_task_avg_score": {
+        "task1": 0.99,
+        "task2": 0.46,
+        "task3": 0.88,
+        "task4": 0.93
+      }
+    }
+  }
+}

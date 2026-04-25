@@ -84,6 +84,9 @@ class MultiAgentGrader:
         self.fatal_name: str = ""
         self._comm_bonus_count: int = 0
         self._max_comm_bonuses: int = 5  # Cap at 5 useful message bonuses per episode
+        self.enable_comm_bonus: bool = True
+        self.enable_anti_hack_penalty: bool = True
+        self._last_reward_components: dict[str, float] = {}
 
     def evaluate(
         self,
@@ -195,6 +198,13 @@ class MultiAgentGrader:
                 bonus += COMMUNICATION_USEFUL_BONUS
 
         raw = credit - penalty + bonus
+        self._last_reward_components = {
+            "milestone_credit": credit,
+            "penalty_total": penalty,
+            "communication_bonus": bonus,
+            "raw_score": raw,
+            "final_score": max(0.01, min(0.99, raw)),
+        }
         return max(0.01, min(0.99, raw))
 
     def _assign_credit(self, milestone_name: str, actions: MultiAgentAction, outputs: dict[str, str]):
@@ -209,6 +219,7 @@ class MultiAgentGrader:
 
     def _build_result(self, done: bool, communication_reward: float = 0.0) -> RewardResult:
         score = self.current_score()
+        penalty_reasons = sorted({p.split(":", 1)[0] for p in self.penalties_applied})
         return RewardResult(
             team_reward=score,
             individual_rewards={
@@ -217,8 +228,10 @@ class MultiAgentGrader:
                 "remediation": score,
             },
             communication_reward=communication_reward,
+            reward_components=dict(self._last_reward_components),
             milestones_achieved=sorted(self.achieved),
             penalties_applied=list(self.penalties_applied),
+            penalty_reasons=penalty_reasons,
             credit_assignment=dict(self.credit_assignment),
             done=done,
         )
