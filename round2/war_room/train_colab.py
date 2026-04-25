@@ -851,6 +851,7 @@ def train_grpo(
     # ---- Step 4: Configure GRPO ----
     print("\n[4/5] Setting up GRPOTrainer...")
     from trl import GRPOConfig, GRPOTrainer
+    import torch
 
     grpo_kwargs: dict = dict(
         output_dir=output_dir,
@@ -864,7 +865,8 @@ def train_grpo(
         save_steps=50,
         save_total_limit=2,
         report_to="none",
-        bf16=True,
+        bf16=torch.cuda.is_bf16_supported() if torch.cuda.is_available() else False,
+        fp16=not torch.cuda.is_bf16_supported() if torch.cuda.is_available() else False,
         gradient_accumulation_steps=4,
         seed=42,
         temperature=0.7,
