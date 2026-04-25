@@ -18,6 +18,7 @@ class AgentAction(BaseModel):
     """A single agent's action for one round."""
     command: str = ""                    # The command to execute (or empty for no-op)
     message: Optional[Message] = None   # Optional message to send
+    thought: str = ""                   # Agent's internal Chain-of-Thought
 
 
 class MultiAgentAction(BaseModel):

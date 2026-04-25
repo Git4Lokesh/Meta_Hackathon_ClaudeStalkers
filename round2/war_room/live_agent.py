@@ -36,7 +36,10 @@ TRIAGE_SYSTEM = textwrap.dedent("""\
     - Trust log evidence over raw metrics (metrics can be stale).
     - Pick the ONE most critical real issue; don't chase every alert.
 
-    RESPOND WITH EXACTLY THREE LINES in this format:
+    RESPOND WITH EXACTLY FOUR BLOCKS in this format:
+    <internal_thought>
+    (your chain of thought reasoning here)
+    </internal_thought>
     COMMAND: <your_command>
     MESSAGE_TO: <diagnosis|remediation|all|none>
     MESSAGE: <your message or empty>
@@ -54,7 +57,10 @@ DIAGNOSIS_SYSTEM = textwrap.dedent("""\
     - Send findings with specifics: exact PID, file path, error line.
     - Don't send speculative messages; be concrete.
 
-    RESPOND WITH EXACTLY THREE LINES in this format:
+    RESPOND WITH EXACTLY FOUR BLOCKS in this format:
+    <internal_thought>
+    (your chain of thought reasoning here)
+    </internal_thought>
     COMMAND: <your_command>
     MESSAGE_TO: <triage|remediation|all|none>
     MESSAGE: <your findings or empty>
@@ -76,7 +82,10 @@ REMEDIATION_SYSTEM = textwrap.dedent("""\
     - After restart, `curl <health_endpoint>` to verify. Don't restart
       the same service repeatedly.
 
-    RESPOND WITH EXACTLY THREE LINES in this format:
+    RESPOND WITH EXACTLY FOUR BLOCKS in this format:
+    <internal_thought>
+    (your chain of thought reasoning here)
+    </internal_thought>
     COMMAND: <your_command>
     MESSAGE_TO: <triage|diagnosis|all|none>
     MESSAGE: <status update or empty>
@@ -146,6 +155,13 @@ def _parse_agent_response(text: str, role: str, round_num: int) -> AgentAction:
     both, defaulting to an empty action if parsing fails completely.
     """
     text = (text or "").strip()
+    
+    thought = ""
+    thought_match = re.search(r"<internal_thought>(.*?)</internal_thought>", text, re.DOTALL | re.IGNORECASE)
+    if thought_match:
+        thought = thought_match.group(1).strip()
+        text = text[:thought_match.start()] + text[thought_match.end():]
+
     # Strip markdown fences the model sometimes adds
     text = re.sub(r"```\w*\n?", "", text)
     text = text.strip("`").strip()
@@ -182,7 +198,7 @@ def _parse_agent_response(text: str, role: str, round_num: int) -> AgentAction:
             round_number=round_num,
         )
 
-    return AgentAction(command=command, message=message)
+    return AgentAction(command=command, message=message, thought=thought)
 
 
 class LiveAgentRunner:
