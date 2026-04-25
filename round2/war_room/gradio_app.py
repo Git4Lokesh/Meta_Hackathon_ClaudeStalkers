@@ -628,7 +628,8 @@ def _belief_state_html():
     return "<div style='color:#8b949e;font-style:italic;padding:10px'>No Belief State Available. Start an episode.</div>"
 
 
-def start_episode(task_id: str, seed: int, use_agent_mode: bool = False, model_name: str = ""):
+def start_episode(task_id: str, seed: int, use_agent_mode: bool = False,
+                  model_name: str = "", api_base_url: str = ""):
     global env, current_obs, round_num, chat_history, reward_history, milestone_list
     global live_runner, agent_mode_enabled
 
@@ -645,6 +646,9 @@ def start_episode(task_id: str, seed: int, use_agent_mode: bool = False, model_n
         cfg = LiveAgentConfig()
         if model_name and model_name.strip():
             cfg.model_name = model_name.strip()
+        if api_base_url and api_base_url.strip():
+            cfg.api_base_url = api_base_url.strip()
+            cfg.__post_init__()  # re-normalize if user changed the URL
         if not cfg.is_ready():
             agent_mode_enabled = False
             chat_history.append(
@@ -658,13 +662,17 @@ def start_episode(task_id: str, seed: int, use_agent_mode: bool = False, model_n
         else:
             live_runner = LiveAgentRunner(cfg)
             live_runner.reset()
+            is_trained = ".endpoints.huggingface.cloud" in cfg.api_base_url
+            banner_color = "#3fb950" if is_trained else "#58a6ff"
+            banner_bg = "#0a2a1a" if is_trained else "#0a1a2a"
+            label = "🎯 Trained adapter" if is_trained else "🤖 Base model"
             chat_history.append(
-                '<div class="agent-msg" style="border-left-color:#58a6ff;background:#0a1a2a">'
-                '<span style="color:#58a6ff;font-weight:700">🤖 Agent Mode active</span>'
-                f'<div class="msg-bubble" style="border-left-color:#58a6ff">'
-                f'Running with model <code>{cfg.model_name}</code> via <code>{cfg.api_base_url}</code>. '
-                'Each round queries the LLM for all three agents.'
-                '</div></div>'
+                f'<div class="agent-msg" style="border-left-color:{banner_color};background:{banner_bg}">'
+                f'<span style="color:{banner_color};font-weight:700">{label} active</span>'
+                f'<div class="msg-bubble" style="border-left-color:{banner_color}">'
+                f'Model <code>{cfg.model_name}</code> via <code>{cfg.api_base_url}</code>. '
+                f'Each round queries the LLM for all three agents.'
+                f'</div></div>'
             )
 
     task_name = current_obs.metadata.get("task_name", task_key)
@@ -796,9 +804,10 @@ def next_round(task_id: str):
     return chat_html, system_html, fig, status, _milestone_html(milestone_list), flow_fig, timeline_fig, _belief_state_html()
 
 
-def auto_play(task_id: str, seed: int, use_agent_mode: bool = False, model_name: str = ""):
+def auto_play(task_id: str, seed: int, use_agent_mode: bool = False,
+              model_name: str = "", api_base_url: str = ""):
     """Run entire episode automatically."""
-    result = start_episode(task_id, seed, use_agent_mode, model_name)
+    result = start_episode(task_id, seed, use_agent_mode, model_name, api_base_url)
 
     for _ in range(30):  # Max iterations
         if current_obs and current_obs.done:
@@ -985,30 +994,56 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                     gr.Markdown(
                         "**Default (unchecked):** Scripted heuristic — acts like a "
                         "perfectly-trained agent. Resolves in 4-6 rounds with correct format.\n\n"
-                        "**Agent Mode (checked):** Live LLM rollout calling the "
-                        "**base Qwen2.5-7B** (untrained). Watch it kill healthy nginx, "
-                        "follow executive panic noise, and loop — exactly the mistakes our "
-                        "reward function catches. Our training evidence "
-                        "([metrics.json](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/outputs/war_room_grpo/metrics.json), "
-                        "[curves](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/outputs/war_room_grpo/training_curves.png)) "
-                        "shows GRPO learns to avoid these.\n\n"
-                        "*Note: HF Inference Providers only hosts base models; our trained "
-                        "LoRA adapter lives at "
-                        "[brodie1of1/war-room-grpo-adapter](https://huggingface.co/brodie1of1/war-room-grpo-adapter) "
-                        "and can be loaded locally via `peft`.*"
+                        "**Agent Mode (checked):** Live LLM rollout.\n"
+                        "- **🤖 Base Qwen 7B** — untrained baseline. Watch it kill healthy "
+                        "  nginx, follow executive panic, and loop.\n"
+                        "- **🎯 Trained Adapter** — our GRPO-trained model. Same base Qwen, "
+                        "  plus LoRA weights from our HF Jobs run.\n"
+                        "\n"
+                        "*The preset picker below switches between them. "
+                        "Advanced users can override the endpoint URL.*"
                     )
                     with gr.Row():
                         agent_mode_toggle = gr.Checkbox(
                             value=False,
-                            label="Enable Agent Mode (live LLM, shows baseline failure modes)",
+                            label="Enable Agent Mode (live LLM)",
                             scale=1,
                         )
+                        agent_preset = gr.Radio(
+                            choices=["🤖 Base Qwen 7B", "🎯 Trained Adapter"],
+                            value="🤖 Base Qwen 7B",
+                            label="Preset",
+                            scale=2,
+                        )
+                    with gr.Row():
                         model_name_input = gr.Textbox(
                             value="Qwen/Qwen2.5-7B-Instruct",
-                            label="Model (HF Inference Providers)",
+                            label="Model",
                             placeholder="Qwen/Qwen2.5-7B-Instruct",
                             scale=2,
                         )
+                        api_base_url_input = gr.Textbox(
+                            value="",
+                            label="API Base URL (leave blank for default)",
+                            placeholder="https://router.huggingface.co/v1",
+                            scale=3,
+                        )
+
+                    def _apply_preset(preset: str):
+                        """Update model/URL fields when preset changes."""
+                        if "Trained" in preset:
+                            # Our dedicated Inference Endpoint
+                            return (
+                                "tgi",  # TGI ignores model name, uses deployed repo
+                                "https://k6cu78bokhtwi9ns.us-east-1.aws.endpoints.huggingface.cloud/v1",
+                            )
+                        return ("Qwen/Qwen2.5-7B-Instruct", "")
+
+                    agent_preset.change(
+                        _apply_preset,
+                        inputs=[agent_preset],
+                        outputs=[model_name_input, api_base_url_input],
+                    )
 
                 status_text = gr.Textbox(label="Status", interactive=False, max_lines=1)
 
@@ -1036,7 +1071,7 @@ Each episode simulates a production incident. Three specialized agents — **Tri
 
                 start_btn.click(
                     start_episode,
-                    inputs=[task_dropdown, seed_input, agent_mode_toggle, model_name_input],
+                    inputs=[task_dropdown, seed_input, agent_mode_toggle, model_name_input, api_base_url_input],
                     outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display],
                 )
                 next_btn.click(
@@ -1046,7 +1081,7 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                 )
                 auto_btn.click(
                     auto_play,
-                    inputs=[task_dropdown, seed_input, agent_mode_toggle, model_name_input],
+                    inputs=[task_dropdown, seed_input, agent_mode_toggle, model_name_input, api_base_url_input],
                     outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display],
                 )
                 chaos_btn.click(

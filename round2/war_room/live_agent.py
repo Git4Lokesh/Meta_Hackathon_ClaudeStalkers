@@ -94,16 +94,17 @@ class LiveAgentConfig:
     """Runtime config for the LLM-driven rollout.
 
     Attributes:
-        api_base_url:   OpenAI-compatible endpoint. Defaults to the HF
-                        Inference Providers router which supports most
-                        open models.
-        model_name:     Model identifier. Defaults to the base model we
-                        trained on (Qwen2.5-7B-Instruct) so the frontend
-                        works even without the adapter. Set to the
-                        adapter repo (brodie1of1/war-room-grpo-adapter)
-                        to get the trained behavior.
+        api_base_url:   OpenAI-compatible endpoint. Three shapes supported:
+                        - HF Inference Providers router (default):
+                          https://router.huggingface.co/v1
+                        - HF Inference Endpoint (dedicated, our trained model):
+                          https://<id>.us-east-1.aws.endpoints.huggingface.cloud/v1
+                          (we auto-append /v1 if missing)
+                        - Any other OpenAI-compatible server.
+        model_name:     Model identifier. For dedicated endpoints this can
+                        be set to 'tgi' (TGI ignores it and uses the deployed
+                        model). For the router, set to the HF model id.
         api_key:        Loaded from HF_TOKEN or API_KEY env var at import.
-                        Can also be overridden per-instance.
         temperature:    Lower = more deterministic. 0.0 is greedy.
         max_tokens:     Per-agent response cap.
     """
@@ -123,6 +124,15 @@ class LiveAgentConfig:
     )
     temperature: float = 0.2
     max_tokens: int = 220
+
+    def __post_init__(self):
+        # Normalize dedicated-endpoint URLs to the /v1 shape that the
+        # OpenAI client expects. An Inference Endpoint base URL looks like
+        # `https://xxx.us-east-1.aws.endpoints.huggingface.cloud`; TGI
+        # exposes `/v1/chat/completions` under that root.
+        url = self.api_base_url.rstrip("/")
+        if ".endpoints.huggingface.cloud" in url and not url.endswith("/v1"):
+            self.api_base_url = url + "/v1"
 
     def is_ready(self) -> bool:
         """True when we have enough config to call the API."""
