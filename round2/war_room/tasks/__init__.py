@@ -7,6 +7,7 @@ from round2.war_room.tasks.task3_cascading_conflicting import CascadingConflicti
 from round2.war_room.tasks.task4_simultaneous import SimultaneousIncidentsTask
 from round2.war_room.tasks.task5_rogue_insider import RogueInsiderTask
 from round2.war_room.tasks.task6_blame_game import BlameGameTask
+from round2.war_room.tasks.procedural import ProceduralTask
 
 WAR_ROOM_TASK_REGISTRY: dict[str, type[WarRoomTaskBase]] = {
     "task1": CoordinatedRestartTask,
@@ -15,6 +16,13 @@ WAR_ROOM_TASK_REGISTRY: dict[str, type[WarRoomTaskBase]] = {
     "task4": SimultaneousIncidentsTask,
     "task5": RogueInsiderTask,
     "task6": BlameGameTask,
+    # Procedural tasks are keyed by difficulty band to allow curriculum sampling.
+    # "procedural" is a factory alias used by the environment to instantiate
+    # a new procedural task per reset (overriding the base pattern).
+    "procedural": ProceduralTask,
+    "procedural_easy": lambda: ProceduralTask(difficulty=0.2),
+    "procedural_medium": lambda: ProceduralTask(difficulty=0.5),
+    "procedural_hard": lambda: ProceduralTask(difficulty=0.9),
 }
 
 __all__ = [
@@ -25,5 +33,6 @@ __all__ = [
     "SimultaneousIncidentsTask",
     "RogueInsiderTask",
     "BlameGameTask",
+    "ProceduralTask",
     "WAR_ROOM_TASK_REGISTRY",
 ]

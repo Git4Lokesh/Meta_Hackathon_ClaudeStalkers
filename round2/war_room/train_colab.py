@@ -513,6 +513,58 @@ def reward_format(completions, **kwargs) -> list[float]:
     return rewards
 
 
+def reward_format_lenient(completions, **kwargs) -> list[float]:
+    """More forgiving format reward — gives partial credit for any relevant
+    content so GRPO always has a non-zero gradient signal.
+
+    This is the insurance policy against the zero-reward collapse observed
+    in qwen1.5B_output.md. Use when SFT warm-up isn't feasible or the model
+    is too small for strict format compliance.
+
+    Scoring (max 1.0):
+      0.3 baseline for any attempt at structured output
+      +0.2 for each of COMMAND/MESSAGE_TO/MESSAGE keyword
+      +0.1 for containing a Linux command verb (cat/grep/tail/ps/etc)
+    """
+    valid_commands = (
+        "cat ", "grep ", "tail ", "head ", "ps ", "top", "journalctl",
+        "dmesg", "netstat", "systemctl ", "kill ", "curl ",
+    )
+    texts = kwargs.get("completion_text")
+    rewards = []
+    for i, completion in enumerate(completions):
+        if texts and i < len(texts):
+            text = texts[i]
+        else:
+            try:
+                text = completion[0]["content"] if isinstance(completion, list) else str(completion)
+            except (IndexError, KeyError, TypeError):
+                text = str(completion)
+
+        text_upper = text.upper()
+        text_lower = text.lower()
+        score = 0.0
+
+        # Baseline for non-empty output
+        if text.strip():
+            score += 0.3
+
+        # Format keywords (partial credit each)
+        if "COMMAND:" in text_upper:
+            score += 0.2
+        if "MESSAGE_TO:" in text_upper:
+            score += 0.2
+        if "MESSAGE:" in text_upper:
+            score += 0.2
+
+        # Bonus for containing a real command verb even without structure
+        if any(cmd in text_lower for cmd in valid_commands):
+            score += 0.1
+
+        rewards.append(min(score, 1.0))
+    return rewards
+
+
 def reward_communication(completions, **kwargs) -> list[float]:
     """Score actionable content in the agent's message.
 
@@ -679,12 +731,23 @@ def train_grpo(
     batch_size: int = 1,
     num_generations: int = 4,
     use_vllm: bool = False,
+    sft_checkpoint: str | None = None,
+    lenient_format: bool = False,
 ) -> dict:
     """Train the Diagnosis agent using GRPO with the War Room as reward.
 
     Uses the official TRL rollout_func pattern so the environment episode
     runs inside the training loop, and reward signals are forwarded to
     four independent reward functions via **kwargs.
+
+    Args:
+        sft_checkpoint: Optional path to an SFT-trained LoRA adapter.
+            When provided, loads this adapter on top of the base model before
+            GRPO starts — gives GRPO a policy that already produces valid format.
+            Strongly recommended for small models (< 7B) or short training runs.
+        lenient_format: If True, use a more forgiving format reward (partial
+            credit for any of COMMAND/MESSAGE keywords) as insurance against
+            zero-reward collapse. Default False (strict format).
     """
     tasks = tasks or ["task1", "task2", "task3"]
     os.makedirs(output_dir, exist_ok=True)
@@ -692,15 +755,17 @@ def train_grpo(
     print("=" * 60)
     print("MULTI-AGENT WAR ROOM — GRPO TRAINING (rollout_func pattern)")
     print("=" * 60)
-    print(f"  Model:       {model_name}")
-    print(f"  Tasks:       {tasks}")
-    print(f"  Episodes:    {num_episodes}")
-    print(f"  LoRA rank:   {lora_r}")
-    print(f"  LR:          {learning_rate}")
-    print(f"  Generations: {num_generations}")
-    print(f"  vLLM:        {use_vllm}")
-    print(f"  Output:      {output_dir}")
-    print(f"  Weights:     {REWARD_WEIGHTS}")
+    print(f"  Model:          {model_name}")
+    print(f"  SFT checkpoint: {sft_checkpoint or '(none — raw instruct model)'}")
+    print(f"  Tasks:          {tasks}")
+    print(f"  Episodes:       {num_episodes}")
+    print(f"  LoRA rank:      {lora_r}")
+    print(f"  LR:             {learning_rate}")
+    print(f"  Generations:    {num_generations}")
+    print(f"  vLLM:           {use_vllm}")
+    print(f"  Lenient format: {lenient_format}")
+    print(f"  Output:         {output_dir}")
+    print(f"  Weights:        {REWARD_WEIGHTS}")
     print("=" * 60)
 
     # ---- Step 1: Load model ----
@@ -750,6 +815,22 @@ def train_grpo(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    # ---- Step 1b: Load SFT warm-up adapter if provided ----
+    if sft_checkpoint:
+        print(f"\n[1b/5] Loading SFT adapter from {sft_checkpoint}...")
+        try:
+            from peft import PeftModel
+            # If the base model already has a PEFT adapter from get_peft_model,
+            # we need to merge the SFT checkpoint into the existing adapter structure
+            if hasattr(model, "load_adapter"):
+                model.load_adapter(sft_checkpoint, adapter_name="default")
+            else:
+                model = PeftModel.from_pretrained(model, sft_checkpoint, is_trainable=True)
+            print("  ✅ SFT adapter loaded — model starts with format-compliant policy")
+        except Exception as e:
+            print(f"  ⚠️  Could not load SFT adapter: {e}")
+            print("      Falling back to raw instruct model (high risk of zero-reward collapse)")
+
     # ---- Step 2: Build dataset ----
     print("\n[2/5] Generating training prompts...")
     dataset_rows = generate_training_dataset(tasks=tasks, prompts_per_task=num_episodes)
@@ -796,7 +877,9 @@ def train_grpo(
 
     training_args = GRPOConfig(**grpo_kwargs)
 
-    reward_funcs = [reward_milestone, reward_format, reward_communication, reward_anti_hack]
+    # Select format reward — strict by default, lenient as fallback for small models
+    format_fn = reward_format_lenient if lenient_format else reward_format
+    reward_funcs = [reward_milestone, format_fn, reward_communication, reward_anti_hack]
     reward_weights = [
         REWARD_WEIGHTS["milestone"],
         REWARD_WEIGHTS["format"],
@@ -919,6 +1002,18 @@ def main():
     parser.add_argument("--generations", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--use-vllm", action="store_true", help="Enable vLLM colocate mode")
+    parser.add_argument(
+        "--sft-checkpoint",
+        default=None,
+        help="Path to SFT-trained LoRA adapter (from sft_train.ipynb). "
+             "Strongly recommended to prevent zero-reward collapse.",
+    )
+    parser.add_argument(
+        "--lenient-format",
+        action="store_true",
+        help="Use forgiving format reward that gives partial credit. "
+             "Insurance against zero-reward collapse if SFT is unavailable.",
+    )
     args = parser.parse_args()
 
     train_grpo(
@@ -932,6 +1027,8 @@ def main():
         num_generations=args.generations,
         batch_size=args.batch_size,
         use_vllm=args.use_vllm,
+        sft_checkpoint=args.sft_checkpoint,
+        lenient_format=args.lenient_format,
     )
 
 
