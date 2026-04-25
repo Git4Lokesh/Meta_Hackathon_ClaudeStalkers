@@ -28,13 +28,18 @@ from round2.war_room.belief_tracker import BeliefStateTracker
 from sre_env.server.simulated_system import SimulatedSystem
 from sre_env.server.command_parser import CommandParser
 
-# OpenEnv base class — graceful fallback if not installed
+# OpenEnv base class — try both import paths, graceful fallback if not installed.
+# Prefer the canonical `openenv.core` path; `openenv_core` is the deprecated alias.
+# We also catch TypeError because older openenv-core uses `kw_only=True` (needs Python 3.10+).
 try:
     from openenv.core.env_server import Environment as OpenEnvBase
-except ImportError:
-    class OpenEnvBase:
-        """Stub when openenv-core is not installed."""
-        pass
+except (ImportError, TypeError):
+    try:
+        from openenv_core.env_server import Environment as OpenEnvBase
+    except (ImportError, TypeError):
+        class OpenEnvBase:
+            """Stub when openenv-core is not installed (or Python < 3.10)."""
+            pass
 
 EXECUTIVE_PANIC_MESSAGES = [
     "🔥 CEO is asking for an update! Are we back up yet?! Revenue is dropping!",
