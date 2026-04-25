@@ -195,6 +195,8 @@ class CurriculumScheduler:
 # HEURISTIC CO-AGENTS
 # ============================================================
 
+# --- legacy hardcoded heuristics for tasks 1-4 (kept bit-stable) ---
+
 def _build_heuristic_triage(round_num: int, task_id: str) -> AgentAction:
     if round_num == 0:
         msg_content = {
@@ -230,6 +232,188 @@ def _build_heuristic_remediation(round_num: int, task_id: str, diagnosis_msg: st
     if "curl" in msg_lower or "verify" in msg_lower:
         return AgentAction(command="curl http://localhost:80/health")
     return AgentAction(command="")
+
+
+# --- fault-aware heuristics for procedural / custom tasks ---
+# These mirror eval_generalization.py's _trained_action so the
+# Triage/Remediation co-agents drive milestones for ANY task that
+# follows the WarRoomTaskBase contract. Activated when env._task_def
+# carries either:
+#   - a `_faults: list[FaultSpec]` attribute (procedural task), OR
+#   - any service in `system.service_registry` with status crashed/degraded
+
+def _legacy_task(task_id: str) -> bool:
+    """Return True for the 4 hardcoded legacy tasks whose heuristic was
+    tuned by hand. All other tasks (procedural, example_custom, future
+    user tasks) go through the fault-aware path."""
+    return task_id in {"task1", "task2", "task3", "task4"}
+
+
+def _diagnosis_message_for(fault_type: str, svc: str) -> str:
+    """Craft a diagnosis message containing keywords the milestones check for."""
+    if fault_type == "memory_leak":
+        return f"{svc} has a memory leak — OOM killer hit the worker. Kill {svc}_worker."
+    if fault_type == "cascade":
+        return f"{svc} is the cascade root cause — upstream dependency failure."
+    if fault_type == "auth_failure":
+        return f"{svc} authentication failed — wrong password in /etc/app/database.yml."
+    if fault_type == "disk_full":
+        return f"{svc} disk is full — no space left on device. Kill the runaway {svc}_logger worker."
+    return f"{svc} crashed (signal 11) — restart {svc}."
+
+
+def _diagnosis_command_for(fault_type: str, svc: str) -> str:
+    """Pick a diagnosis command whose output mentions the service + fault keyword."""
+    if fault_type == "memory_leak":
+        return "dmesg"
+    return f"journalctl -u {svc}"
+
+
+def _has_worker_processes(system, svc: str) -> list[int]:
+    return [pid for pid, p in system.process_table.processes.items()
+            if p.name.startswith(f"{svc}_worker")]
+
+
+def _has_logger_processes(system, svc: str) -> list[int]:
+    return [pid for pid, p in system.process_table.processes.items()
+            if p.name == f"{svc}_logger"]
+
+
+def _discover_faults(env) -> list[tuple[str, str]]:
+    """Return list of (fault_type, target_service) for the active task.
+
+    For procedural tasks, reads task._faults (which carries fault_type).
+    For other tasks, inspects system.service_registry for crashed/degraded
+    services and infers fault_type from system signals. Falls back to
+    'crash' as a generic remediation type.
+    """
+    task_def = getattr(env, "_task_def", None)
+    system = getattr(env, "_system", None)
+    if system is None:
+        return []
+
+    explicit = getattr(task_def, "_faults", None)
+    if explicit:
+        return [(f.fault_type, f.target_service) for f in explicit]
+
+    inferred: list[tuple[str, str]] = []
+    for name, svc in system.service_registry.services.items():
+        if svc.status in ("crashed", "degraded"):
+            inferred.append(("crash", name))
+    return inferred
+
+
+def _build_faultaware_triage(round_num: int, env) -> AgentAction:
+    """Triage opener that names every faulted service so the
+    `triage_mentions(svc)` milestone for each fault fires."""
+    faults = _discover_faults(env)
+    if not faults:
+        return AgentAction(command="get_dashboard")
+    if round_num == 0:
+        names = ", ".join(svc for _, svc in faults)
+        return AgentAction(
+            command="get_dashboard",
+            message=Message(
+                from_agent="triage", to_agent="diagnosis",
+                content=f"Active incidents on: {names}. Investigate each one.",
+                timestamp=datetime.now(), round_number=round_num,
+            ),
+        )
+    if round_num - 1 < len(faults):
+        _, svc = faults[round_num - 1]
+        return AgentAction(
+            command="",
+            message=Message(
+                from_agent="triage", to_agent="diagnosis",
+                content=f"Focus on {svc} — confirm fault type.",
+                timestamp=datetime.now(), round_number=round_num,
+            ),
+        )
+    return AgentAction(command="")
+
+
+def _build_faultaware_diagnosis_followup(round_num: int, env) -> Optional[AgentAction]:
+    """Diagnosis follow-up (round 1+) for procedural/custom tasks.
+
+    DELIBERATELY DOES NOT SOLVE THE INCIDENT. The heuristic only runs
+    inspection commands so the dashboard refreshes; it does NOT emit
+    the milestone-keyword message. That responsibility belongs to the
+    learner (Diagnosis on round 0). This preserves a real reward
+    gradient on the LLM completion.
+    """
+    faults = _discover_faults(env)
+    if not faults:
+        return None
+    diag_idx = round_num - 1
+    if 0 <= diag_idx < len(faults):
+        _, svc = faults[diag_idx]
+        return AgentAction(command=f"journalctl -u {svc}")
+    return None
+
+
+def _llm_named_service(diagnosis_msg: str, faults: list[tuple[str, str]]) -> Optional[tuple[str, str]]:
+    """Return the (fault_type, svc) tuple whose service name appears in the
+    LLM's round-0 diagnosis message, or None if the LLM didn't name any
+    faulted service. Case-insensitive substring match."""
+    if not diagnosis_msg:
+        return None
+    lower = diagnosis_msg.lower()
+    for ftype, svc in faults:
+        if svc.lower() in lower:
+            return (ftype, svc)
+    return None
+
+
+def _build_faultaware_remediation(
+    round_num: int,
+    env,
+    last_diag_msg: str,
+) -> AgentAction:
+    """Remediation that ONLY acts on faults the LLM (Diagnosis) named.
+
+    This keeps the reward gradient alive: the LLM must actually mention
+    the right service in its message for remediation to fire. A garbage
+    completion ⇒ remediation idles ⇒ low milestone reward.
+
+    Round layout (per fault that the LLM named):
+      round 1: diagnosis re-inspects (heuristic), remediation idles
+      round 2+: remediation applies the appropriate fix
+    """
+    faults = _discover_faults(env)
+    if not faults:
+        return AgentAction(command="")
+
+    # Use only the fault the LLM actually identified. If the LLM said
+    # nothing useful, the heuristic remediation does nothing and the
+    # episode collects only the cheap milestones (e.g. format reward).
+    llm_target = _llm_named_service(last_diag_msg, faults)
+    if llm_target is None:
+        return AgentAction(command="")
+
+    ftype, svc = llm_target
+    system = getattr(env, "_system", None)
+
+    # Apply remediation starting from round 2 to give diagnosis a turn first
+    if round_num < 2:
+        return AgentAction(command="")
+
+    if ftype == "memory_leak" and system is not None:
+        pids = _has_worker_processes(system, svc)
+        if pids:
+            return AgentAction(command=f"kill -9 {pids[0]}")
+        return AgentAction(command=f"systemctl restart {svc}")
+    if ftype == "auth_failure":
+        if round_num == 2:
+            return AgentAction(
+                command='edit /etc/app/database.yml "wrong_password_123" "correct_db_pass_456"',
+            )
+        return AgentAction(command=f"systemctl restart {svc}")
+    if ftype == "disk_full" and system is not None:
+        pids = _has_logger_processes(system, svc)
+        if pids:
+            return AgentAction(command=f"kill -9 {pids[0]}")
+        return AgentAction(command=f"systemctl restart {svc}")
+    return AgentAction(command=f"systemctl restart {svc}")
 
 
 def _parse_diagnosis_completion(text: str, round_num: int) -> AgentAction:
@@ -326,6 +510,7 @@ def _run_war_room_episode_inner(
     max_rounds = min(obs.metadata.get("max_rounds", 10), MAX_EPISODE_ROUNDS)
     last_diag_msg = ""
     rounds_used = 0
+    use_legacy = _legacy_task(task_id)
 
     for r in range(max_rounds):
         if obs.done:
@@ -335,22 +520,31 @@ def _run_war_room_episode_inner(
         # Diagnosis action: model completion on round 0, heuristic after
         if r == 0:
             diag_action = _parse_diagnosis_completion(completion_text, r)
+        elif policy_fn is not None:
+            next_comp = policy_fn(obs.diagnosis.text, r)
+            diag_action = _parse_diagnosis_completion(next_comp, r)
+        elif use_legacy:
+            cmds = _FOLLOW_UP_CMDS.get(task_id, [""])
+            cmd = cmds[r - 1] if r - 1 < len(cmds) else ""
+            diag_action = AgentAction(command=cmd)
         else:
-            if policy_fn is not None:
-                next_comp = policy_fn(obs.diagnosis.text, r)
-                diag_action = _parse_diagnosis_completion(next_comp, r)
-            else:
-                cmds = _FOLLOW_UP_CMDS.get(task_id, [""])
-                cmd = cmds[r - 1] if r - 1 < len(cmds) else ""
-                diag_action = AgentAction(command=cmd)
+            fa_diag = _build_faultaware_diagnosis_followup(r, env)
+            diag_action = fa_diag if fa_diag is not None else AgentAction(command="")
 
         if diag_action.message and diag_action.message.content:
             last_diag_msg = diag_action.message.content
 
+        if use_legacy:
+            triage = _build_heuristic_triage(r, task_id)
+            remediation = _build_heuristic_remediation(r, task_id, last_diag_msg)
+        else:
+            triage = _build_faultaware_triage(r, env)
+            remediation = _build_faultaware_remediation(r, env, last_diag_msg)
+
         action = MultiAgentAction(
-            triage=_build_heuristic_triage(r, task_id),
+            triage=triage,
             diagnosis=diag_action,
-            remediation=_build_heuristic_remediation(r, task_id, last_diag_msg),
+            remediation=remediation,
         )
         obs = env.step(action)
 
