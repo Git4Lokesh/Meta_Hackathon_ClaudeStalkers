@@ -25,15 +25,19 @@ MODEL="${MODEL:-brodie1of1/war-room-7b-merged}"
 # Port — default 8080 to avoid clashing with the Gradio UI (7860).
 PORT="${PORT:-8080}"
 
-# Activate our venv if present (python 3.12 with openenv-core).
-if [ -f .venv/bin/activate ]; then
-    # shellcheck disable=SC1091
-    source .venv/bin/activate
+# Use the venv python directly rather than `source activate` since some
+# venvs are missing pip on PATH.
+VPYTHON=".venv/bin/python"
+if [ ! -x "$VPYTHON" ]; then
+    echo "No .venv found at .venv/bin/python. Create it first:"
+    echo "  python3.12 -m venv .venv"
+    echo "  bash scripts/run_mlx_server_setup.sh"
+    exit 1
 fi
 
-# Verify mlx-lm is installed.
-if ! python -c "import mlx_lm" 2>/dev/null; then
-    echo "mlx-lm not installed. Run scripts/run_mlx_server_setup.sh first."
+# Verify mlx-lm is installed in the venv.
+if ! "$VPYTHON" -c "import mlx_lm" 2>/dev/null; then
+    echo "mlx-lm not installed in .venv. Run scripts/run_mlx_server_setup.sh first."
     exit 1
 fi
 
@@ -47,7 +51,7 @@ echo ""
 
 # `mlx_lm.server` is the official OpenAI-compatible shim. It auto-converts
 # HF models on first load (downloads, dequantizes/requantizes as needed).
-exec python -m mlx_lm.server \
+exec "$VPYTHON" -m mlx_lm.server \
     --model "$MODEL" \
     --host 127.0.0.1 \
     --port "$PORT" \

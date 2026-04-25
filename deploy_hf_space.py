@@ -46,12 +46,21 @@ IGNORE_PATTERNS = [
 
 
 def main() -> int:
+    # Prefer env var, then fall back to whatever huggingface_hub cached
+    # from a previous `hf auth login`. If both are missing, bail early.
     token = os.environ.get("HF_TOKEN") or os.environ.get("API_KEY")
     if not token:
+        try:
+            from huggingface_hub import get_token
+            token = get_token()
+        except Exception:
+            token = None
+    if not token:
         print(
-            "ERROR: HF_TOKEN is not set. Run:\n"
+            "ERROR: No HF token found. Run one of:\n"
             "  export HF_TOKEN='your_token_here'\n"
-            "before retrying.",
+            "  hf auth login\n"
+            "then retry.",
             file=sys.stderr,
         )
         return 1

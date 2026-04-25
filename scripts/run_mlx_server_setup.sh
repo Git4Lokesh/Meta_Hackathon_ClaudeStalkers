@@ -12,12 +12,19 @@ if [ ! -f .venv/bin/activate ]; then
     exit 1
 fi
 
-# shellcheck disable=SC1091
-source .venv/bin/activate
+# Use the venv's python directly (not pip on PATH, which may belong to
+# the system Python 3.9 user-site).
+VPYTHON=".venv/bin/python"
+
+# Ensure pip is bootstrapped inside the venv (ensurepip sometimes leaves
+# it out depending on how the venv was created).
+if ! "$VPYTHON" -m pip --version >/dev/null 2>&1; then
+    "$VPYTHON" -m ensurepip --upgrade
+fi
 
 echo "Installing mlx-lm and its deps (takes ~1-2 min) ..."
-pip install --upgrade pip --quiet
-pip install --upgrade "mlx-lm>=0.20" "mlx>=0.20" --quiet
+"$VPYTHON" -m pip install --upgrade pip --quiet
+"$VPYTHON" -m pip install --upgrade "mlx-lm>=0.20" "mlx>=0.20" --quiet
 
 echo ""
 echo "✅ Setup complete."
