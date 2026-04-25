@@ -1,141 +1,126 @@
-# Hackathon On-Site Task Split
+# Hackathon On-Site Task Split — Updated
 
-**Team**: ClaudeStalkers (Siddharth + Lakshminath)
+**Team**: ClaudeStalkers
+**Active on-site**: Lokesh (+ Kiro)
 **Time budget**: ~36 hours until pitch
-**Priority order**: Validate → SFT warm-start → Procedural tasks → Deploy
 
 ## 🚨 Critical Finding from Qwen 1.5B run
 
-`qwen1.5B_output.md` confirms the run produced **zero reward across all steps** (238 lines, `reward: 0`, `loss: 0`, `grad_norm: 0`). The 1.5B model never produced valid `COMMAND:/MESSAGE_TO:/MESSAGE:` format, so the reward function had no signal to optimize.
+`qwen1.5B_output.md` shows **zero reward across all 238 steps** (`reward: 0`, `loss: 0`, `grad_norm: 0`). The 1.5B model never produced valid `COMMAND:/MESSAGE_TO:/MESSAGE:` format, so GRPO had no gradient signal.
 
-This is the "success probability must be > 0" failure from the hackathon guide §15. **SFT warm-start before GRPO is now non-negotiable** to avoid repeating this on the 7B model.
-
----
-
-## Phase 1: Validate Baseline (first 3-4 hours on-site)
-
-**Owner**: Both (pair-program, this is the foundation)
-
-Once HF credits are allocated:
-
-1. Confirm which compute mechanism HF gave us (Jobs / Spaces GPU / dev mode). Ask Scaler team on Discord.
-2. Clone repo on the GPU instance: `git clone https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers.git`
-3. Activate 3.12 venv: `cd Meta_Hackathon_ClaudeStalkers && source .venv/bin/activate || python3.12 -m venv .venv && source .venv/bin/activate`
-4. Install: `pip install -e .` and training deps per `run_training.sh`
-5. Run smoke test on heuristic demo: `PYTHONPATH=. python round2/war_room/demo_comparison.py` — confirms env works on their infra
-6. **Do NOT run GRPO training yet** — Phase 2 first
-
-**Done criterion**: demo_comparison prints the 0.01 → 0.80 table, no errors.
+**Implication**: before running ANY GRPO training on 7B, we need either (a) an SFT warm-start to teach format, or (b) a more forgiving reward function that gives non-zero signal for partial format compliance. **Going in without these is high-risk.**
 
 ---
 
-## Phase 2: Features (split the work)
+## Revised Plan (Lokesh + Kiro)
 
-### Task A — SFT Warm-Start Pipeline (HIGH PRIORITY)
-**Owner**: Lakshminath
-**Estimated time**: 3-4 hours
-**Why it matters**: Without SFT, 7B GRPO will likely collapse to zero reward like 1.5B did.
+### Phase 0: Pre-Credit Work (do NOW, no GPU needed)
 
-**Deliverables:**
-1. Create `round2/war_room/sft_warmup.py`:
-   - Generate 50-100 synthetic Diagnosis completions using the heuristic agents from `train.py` at `skill_level=1.0`
-   - Extract (prompt, target_completion) pairs where target is the structured `COMMAND:/MESSAGE_TO:/MESSAGE:` format
-   - Save as a HuggingFace dataset
-2. Create `round2/war_room/sft_train.ipynb` (Colab-runnable):
-   - Load Qwen2.5-7B-Instruct (or Qwen2.5-1.5B-Instruct for quick validation)
-   - SFT on the synthetic dataset for 1-2 epochs, LoRA rank 16
-   - Save the adapter to `outputs/war_room_sft/`
-3. Update `train_colab.py` to accept an optional `--sft-checkpoint` argument that loads the SFT adapter before GRPO
+**High-impact, you + Kiro pair-program these:**
 
-**Success check**: After SFT, running inference on a fresh War Room observation should produce ≥ 60% format compliance (has all three COMMAND/MESSAGE_TO/MESSAGE fields).
+#### Task A — SFT Warm-Start Pipeline
+**Why**: Prevents repeating the zero-reward collapse on 7B. The hackathon guide explicitly recommends "tiny amount of task-format SFT" before RL.
 
-### Task B — Procedural Task Generator (MEDIUM PRIORITY)
-**Owner**: Siddharth
-**Estimated time**: 4-5 hours
-**Why it matters**: Converts the environment from RLVR (6 fixed tasks) to RLVE (infinite procedurally generated tasks). Directly hits the RLVE theme the judging criteria rewards.
+**Deliverables** (Kiro will scaffold, you review and commit):
+1. `round2/war_room/build_sft_dataset.py` — generates 100-200 synthetic (prompt, target) pairs from heuristic agents at skill_level=1.0
+2. `round2/war_room/sft_train.ipynb` — Colab-runnable notebook that SFTs Qwen2.5-7B-Instruct on the dataset (LoRA rank 16, 1-2 epochs)
+3. Update `train_colab.py` to accept `--sft-checkpoint` flag that loads the SFT adapter before GRPO
 
-**Deliverables:**
-1. Create `round2/war_room/tasks/procedural.py` with a `ProceduralTask(difficulty: float)` class that:
-   - Randomly picks a fault type: `crash`, `memory_leak`, `cascade`, `auth_failure`
-   - Randomly picks 1-3 services to fault based on difficulty
-   - Injects 0-4 red herrings (phantom alerts) based on difficulty
-   - Computes milestones procedurally from the fault injection
-2. Extend `WAR_ROOM_TASK_REGISTRY` with `procedural` as a task_id that instantiates `ProceduralTask`
-3. Update `CurriculumScheduler` to sample procedural tasks with increasing difficulty
-4. Write 5-10 property-based tests in `tests/property/test_procedural.py` using hypothesis
+**Done when**: Dataset generates 100+ valid pairs locally, notebook runs without errors (can be validated on-site once GPU is available).
 
-**Success check**: `env.reset(task_id="procedural", seed=N)` produces a valid episode for any seed N, with milestones that can be achieved by the heuristic agents.
+#### Task B — Procedural Task Generator
+**Why**: Converts environment from RLVR (6 fixed tasks) → RLVE (infinite procedurally generated tasks). The judging criteria explicitly rewards RLVE-style adaptive environments.
 
-### Task C — Deploy to HF Spaces (QUICK WIN)
-**Owner**: Siddharth (during idle time while training runs)
-**Estimated time**: 1-2 hours
+**Deliverables** (Kiro scaffolds, you review):
+1. `round2/war_room/tasks/procedural.py` — `ProceduralTask(difficulty: float)` class
+2. Randomly injects fault types: `crash`, `memory_leak`, `cascade`, `auth_failure`
+3. Randomly adds 0-4 phantom alerts based on difficulty
+4. Register `"procedural"` in `WAR_ROOM_TASK_REGISTRY`
+5. Update `CurriculumScheduler` to sample procedural tasks
+6. Property tests in `tests/property/test_procedural.py` (5-10 tests using hypothesis)
 
-**Deliverables:**
-1. Create HF Space at `huggingface.co/spaces/brodie1of1/war-room` (if not already)
-2. Push the current repo to the Space: `git remote add hf https://huggingface.co/spaces/brodie1of1/war-room && git push hf main`
-3. Verify the Space builds and runs on port 7860
-4. Verify the HTML homepage loads, `/health` returns OK, and `/reset` works
-5. Update README with the live Space URL
+**Done when**: `env.reset(task_id="procedural", seed=N)` works for any N, all 146 existing tests still pass.
 
-**Success check**: `curl https://brodie1of1-war-room.hf.space/health` returns 200 OK.
+#### Task C — Fallback Reward Relaxation (insurance)
+**Why**: If SFT warm-start doesn't work, we need a backup plan. A more forgiving reward gives the model *some* signal even with imperfect format.
+
+**Deliverables**:
+1. Add a `--lenient-format` flag to `train_colab.py`
+2. When set, format_reward gives partial credit: 0.3 for any of (COMMAND / MESSAGE) keywords present, 1.0 for perfect format
+3. Keep the strict version as default
+
+**Done when**: Training with `--lenient-format` gives non-zero reward signal even on degenerate outputs.
 
 ---
 
-## Phase 3: Scale Training (after Task A completes)
+### Phase 1: Validate on Compute (when credits arrive, ~3-4 hours)
 
-**Owner**: Lakshminath (runs training), Siddharth (monitors, handles failures)
-**Estimated time**: 2-4 hours (depends on compute allocation)
+**Priority order on the A100 (or whatever HF gives):**
 
-1. Run SFT warm-up on Qwen2.5-7B → produces `outputs/war_room_sft/adapter_model.safetensors`
-2. Run full GRPO with `--sft-checkpoint outputs/war_room_sft` → produces `outputs/war_room_grpo/metrics.json`
-3. Run `python round2/war_room/generate_charts.py` → produces `training_curves.png`
-4. Commit both to repo
-5. Uncomment plot embeds in README
+1. **Smoke test** (5 min): `PYTHONPATH=. python round2/war_room/demo_comparison.py` → should print the 0.01 → 0.80 table
+2. **SFT warm-up** (20-40 min): Run the SFT notebook from Task A with Qwen2.5-7B-Instruct → produces `outputs/war_room_sft/`
+3. **Verify format** (5 min): Run inference on 20 War Room observations with the SFT model → confirm ≥ 60% format compliance
+4. **GRPO training** (45-90 min): `python round2/war_room/train_colab.py --episodes 30 --sft-checkpoint outputs/war_room_sft`
+5. **Generate charts** (2 min): `python round2/war_room/generate_charts.py`
+6. **Commit and push** (2 min): commit `metrics.json` and `training_curves.png`
+7. **Update README** (5 min): uncomment the plot embeds
 
-**Success check**: `training_curves.png` shows reward trending upward over episodes (not flat at zero).
-
----
-
-## Phase 4: Stretch Goals (only if Phase 1-3 complete with time to spare)
-
-### Task D — Train 2 agents simultaneously (HIGH RISK, HIGH REWARD)
-**Owner**: Both
-**Estimated time**: 6-8 hours
-
-Extend `train_colab.py` to train Diagnosis AND Remediation with separate LoRA adapters. Triage stays heuristic. Use alternating GRPO updates. **Only attempt if everything else is done AND we have >8 hours left.** High chance of convergence issues.
-
-### Task E — Rollout inspection dashboard
-**Owner**: whoever finishes first
-**Estimated time**: 2 hours
-
-Add a page to `gradio_app.py` that shows the rollout audit log (sampled completions + reward breakdowns + anti-hack triggers) during training. Visually impressive for the pitch.
+**If Step 2 or 4 fails**: fall back to `--lenient-format` from Task C, try again.
 
 ---
 
-## Phase 5: Pre-Pitch (last 4-6 hours)
+### Phase 2: Deploy + Polish (1-2 hours)
 
-**Owner**: Both (pair work)
+1. **Push to HF Spaces** (15 min):
+   ```bash
+   git remote add hf https://huggingface.co/spaces/brodie1of1/war-room
+   git push hf main
+   ```
+   Verify the Space builds and runs.
 
-1. Pitch practice — minimum 3 full run-throughs, time under 3 minutes
-2. Record backup demo video in case live demo fails
-3. Update `pitch_outline.md` with actual training numbers
-4. Polish README with final metrics, link the HF Space, link the blog, link the Colab notebook
-5. Final `git push` and lock the repo — **no more commits** after submission deadline
+2. **Polish README** (15 min):
+   - Add final training numbers to results section
+   - Uncomment plot embeds
+   - Verify all links work (HF Space, blog, notebook, Colab badge)
+
+3. **Record backup video** (30 min): Screen-record the demo_comparison + gradio dashboard in case live demo fails
+
+---
+
+### Phase 3: Pitch Prep (final 4-6 hours)
+
+**Do at least 3 full practice runs of the 3-minute pitch:**
+
+1. Lead with the 3 AM incident story (30 sec)
+2. Show environment architecture briefly (45 sec)
+3. **Live demo moment**: trained agent pushing back on a phantom alert — this is your jaw-drop moment (60 sec)
+4. Show training curves and metrics (30 sec)
+5. Close with "first multi-agent Theory of Mind environment on OpenEnv" (15 sec)
+
+**Q&A prep is in `round2/war_room/pitch_outline.md`** — review it.
+
+---
+
+## Stretch Goals (only if Phase 1 produces real curves AND you have >8 hours left)
+
+### Task D — Train 2 agents simultaneously (HIGH RISK)
+Extend `train_colab.py` to train Diagnosis AND Remediation with separate LoRA adapters. Alternating GRPO updates. Only attempt if everything is stable and you have buffer time.
+
+### Task E — Live belief tracker demo in Gradio
+Add a live panel to `gradio_app.py` that shows the Belief State Tracker updating in real-time as the trained agent plays. Visually impressive for pitch.
 
 ---
 
 ## Hard Rules
 
-1. After EVERY task, run `PYTHONPATH=. python -m pytest tests/ -x -q`. If tests fail, revert the commit.
-2. Commit to main only after local tests pass. No broken builds on main.
-3. If GRPO training starts producing non-zero rewards, **stop adding features** and let training run. Real training evidence > theoretical features.
-4. Communicate on Discord before touching shared files (train_colab.py, environment.py, grader.py). Non-overlapping files are fair game.
-5. If stuck for >30 min on any task, ask the other person or skip to the next priority.
+1. **Test after every change**: `PYTHONPATH=. python -m pytest tests/ -x -q`. If broken, revert.
+2. **Don't touch `environment.py`, `grader.py`, `anti_hack.py`** unless absolutely needed — these are stable and tested.
+3. **If GRPO starts producing non-zero rewards, STOP adding features** and let it train. Real training evidence beats theoretical code.
+4. **No commits to main after submission deadline**. Lock it.
+5. **If stuck >30 min**, pivot to the next task or ask for help on Discord.
 
 ---
 
-## Git Branching Strategy
+## Immediate Next Action (right now, before credits arrive)
 
-Both of you work on `main`. Pull before every work session. If conflicts arise:
-- On merge conflict, communicate first, don't resolve blindly
-- Training outputs (`outputs/`) are in `.gitignore` — only commit the final `metrics.json` and `training_curves.png` from the winning run
+Start Task A (SFT dataset builder). Ask Kiro to scaffold `round2/war_room/build_sft_dataset.py`. Review the code, commit. Then move to Task B (procedural tasks). This puts you in the strongest possible position when credits drop.
