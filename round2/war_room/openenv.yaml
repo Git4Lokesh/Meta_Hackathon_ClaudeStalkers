@@ -1,6 +1,6 @@
 spec_version: 1
-name: war_room
+name: multi_agent_war_room
 type: space
 runtime: fastapi
-app: round2.war_room.app:app
+app: round2.war_room.hf_space_app:app
 port: 7860

@@ -765,6 +765,57 @@ def _belief_state_html():
     )
 
 
+def _pushback_summary_html() -> str:
+    """Sticky top-of-chat banner summarizing Theory of Mind pushback events.
+
+    Surfaces the single signal judges care most about: did the team detect
+    a false belief and push back? This banner counts pushback events and
+    flips from dormant (grey) to celebratory (green) the moment one fires.
+    """
+    global env
+    tracker = getattr(env, "_belief_tracker", None) if env else None
+    if not tracker:
+        return ""
+    try:
+        snap = tracker.get_snapshot()
+    except Exception:
+        return ""
+    tom_events = snap.get("tom_events", []) or []
+    count = len(tom_events)
+    if count == 0:
+        return (
+            '<div style="background:#161b22;border-left:4px solid #30363d;'
+            'border-radius:6px;padding:8px 14px;margin:0 0 10px 0">'
+            '<span style="color:#8b949e;font-weight:700">🧠 Theory of Mind watch</span>'
+            '<span style="color:#484f58;margin-left:10px;font-size:0.85em">'
+            '0 pushbacks so far — will light up when an agent contradicts a false belief'
+            '</span></div>'
+        )
+    # One or more pushbacks — celebrate and list them briefly.
+    bullets = []
+    for ev in tom_events[:4]:
+        detector = (ev.get("detector") or "?").capitalize()
+        target = (ev.get("target") or "?").capitalize()
+        entity = ev.get("entity") or "?"
+        bullets.append(
+            f'<li style="margin:2px 0"><b style="color:#bc8cff">{detector}</b> '
+            f'→ <b>{target}</b>: pushback on <code>{entity}</code></li>'
+        )
+    more = ""
+    if count > 4:
+        more = f'<li style="color:#8b949e;font-style:italic">…and {count - 4} more</li>'
+    return (
+        '<div style="background:linear-gradient(135deg,#0a2a14,#0a1f1a);'
+        'border-left:4px solid #3fb950;border-radius:6px;padding:10px 14px;margin:0 0 10px 0">'
+        f'<div style="color:#3fb950;font-weight:700;font-size:1.0em">'
+        f'🧠 Theory of Mind moments: {count}'
+        '</div>'
+        '<ul style="color:#c9d1d9;font-size:0.85em;margin:4px 0 0 0;padding-left:20px">'
+        + "".join(bullets) + more +
+        '</ul></div>'
+    )
+
+
 def start_episode(task_id: str, seed: int, use_agent_mode: bool = False,
                   model_name: str = "", api_base_url: str = ""):
     global env, current_obs, round_num, chat_history, reward_history, milestone_list, thought_history, round_trace
@@ -827,7 +878,7 @@ def start_episode(task_id: str, seed: int, use_agent_mode: bool = False,
     chat_history.append(header)
 
     system_html = _service_status_html(env.state.simulated_system)
-    chat_html = "\n".join(chat_history)
+    chat_html = _pushback_summary_html() + "\n".join(chat_history)
     fig = _reward_plot([0.0])
     empty_flow = _comm_flow_graph([])
     empty_timeline = _comm_timeline([], 10)
@@ -974,7 +1025,7 @@ def next_round(task_id: str):
         )
         status = f"✅ RESOLVED — Score: {score:.3f}"
 
-    chat_html = "\n".join(chat_history)
+    chat_html = _pushback_summary_html() + "\n".join(chat_history)
     system_html = _service_status_html(env.state.simulated_system)
     fig = _reward_plot(reward_history)
     messages = env._channel.get_full_history() if env._channel else []

@@ -26,6 +26,20 @@ An OpenEnv-compliant multi-agent RL environment where three specialized SRE agen
 
 **Team ClaudeStalkers** — Siddharth, Lakshminath, Lokesh — BITS Pilani Hyderabad
 
+## Try it in 30 seconds
+
+No GPU required. This runs the baseline-vs-trained comparison across all four scripted tasks and prints the numbers that back the claims below.
+
+```bash
+git clone https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers.git
+cd Meta_Hackathon_ClaudeStalkers
+pip install -e .
+PYTHONPATH=. python round2/war_room/demo_comparison.py
+```
+
+Expected output: composite score `0.01 → 0.80`, task-by-task table, runs in under 1 second.
+Interactive Gradio dashboard: [HF Space](https://huggingface.co/spaces/brodie1of1/war-room).
+
 | Resource | Link |
 |---|---|
 | Live Environment | [HF Spaces](https://huggingface.co/spaces/brodie1of1/war-room) |
@@ -40,6 +54,8 @@ An OpenEnv-compliant multi-agent RL environment where three specialized SRE agen
 | Training Notebook | [round2/war_room/train_colab.ipynb](round2/war_room/train_colab.ipynb) |
 | T4 Quick Train | [round2/war_room/train_t4_quick.py](round2/war_room/train_t4_quick.py) |
 | Demo Comparison | [round2/war_room/demo_comparison.py](round2/war_room/demo_comparison.py) |
+| Pitch Deck (content) | [round2/war_room/PITCH_DECK.md](round2/war_room/PITCH_DECK.md) |
+| Video Script | [round2/war_room/VIDEO_SCRIPT.md](round2/war_room/VIDEO_SCRIPT.md) |
 | GitHub | [Git4Lokesh/Meta_Hackathon_ClaudeStalkers](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers) |
 
 

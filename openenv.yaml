@@ -1,6 +1,12 @@
 spec_version: 1
-name: sre_env
+name: multi_agent_war_room
 type: space
 runtime: fastapi
-app: round2.war_room.app:app
+app: round2.war_room.hf_space_app:app
 port: 7860
+
+# The unified entry point mounts:
+#   /        — Gradio interactive dashboard
+#   /api     — OpenEnv REST surface (POST /reset, /step, GET /state, /health, /schema)
+# Judges pulling the environment URL will land on the Gradio UI;
+# programmatic benchmarking uses the /api prefix.
