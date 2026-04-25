@@ -17,7 +17,7 @@ tags:
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/round2/war_room/train_colab.ipynb)
 [![HF Spaces](https://img.shields.io/badge/🤗%20Spaces-War%20Room-orange)](https://huggingface.co/spaces/brodie1of1/war-room)
-[![Tests](https://img.shields.io/badge/tests-146%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-169%20passing-brightgreen)](tests/)
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-compliant-blue)](https://github.com/meta-pytorch/OpenEnv)
 
 **OpenEnv environment first. Reward benchmark first. Training proof second.**
@@ -46,12 +46,24 @@ Production incidents at scale are never solved by one person. They require a tri
 
 This environment trains LLMs to handle **multi-agent cooperation under partial observability** — with phantom alerts, adversarial noise, and belief conflicts that force agents to develop Theory of Mind.
 
+## What Capability Gap This Environment Targets
+
+Most multi-agent RL environments assume honest agents, perfect information, and a single correct answer per step. Real engineering teams operate under noisier conditions:
+
+- dashboards show stale metrics;
+- panicked stakeholders push wrong priorities;
+- evidence contradicts assumptions;
+- a team member's confident claim may be wrong.
+
+A competent engineer has to *detect* when someone else's belief is false and push back, not just follow orders. This is Theory of Mind under adversarial noise — a skill that isn't well-represented in existing LLM benchmarks, and is exactly what this environment measures and trains. It is not a claim that the trained agent is production-ready for real SRE work. It is a claim that this environment produces a **measurable, trainable signal** for a capability that real teams need.
+
 ## Positioning
 
-This repository is submitted as a reusable **OpenEnv training environment** for incident response, with reward design as the core contribution.
+This repository is submitted as a reusable **OpenEnv training environment** for multi-agent incident response, with reward design and belief-conflict measurement as the core contributions.
 
 - **Environment-native score** is computed by the task grader and exposed on every step.
 - **Trainer-side shaping** (format/anti-hack helpers in GRPO) is optimization support and does not redefine task success.
+- **Deception Resistance Score** is an evaluation metric, not a training reward — it tracks whether the agent is learning to model other agents' false beliefs, the capability the environment is ultimately for.
 
 ## What Makes This Environment Novel
 
@@ -138,36 +150,61 @@ The most striking qualitative change: untrained agents blindly follow whatever T
 
 ## Reward Ablation Evidence
 
-Generated with:
+We remove each reward component in turn and evaluate on fixed seeds. The chart below shows per-task average score for each configuration.
+
+![Reward ablation](outputs/reward_ablation/ablation_results.png)
+
+*Figure 3 — reward ablation, scripted expert policy, 3 seeds × 4 tasks. Removing the communication bonus drops Task 2 (memory leak + CPU red herring) noticeably because prioritization under noise relies on actionable cross-agent messages. Turning off the milestone-only variant jumps Task 2 and Task 4 scores because the penalties for unresolved incidents are waived — which illustrates that the full reward is not merely additive but disciplined: milestone credit without penalties overstates progress, and penalties without comm shaping starves coordination.*
+
+| Config | Avg Score | Resolved Rate | What removing it costs |
+|---|---:|---:|---|
+| full | 0.82 | 0.75 | Baseline — balanced objective |
+| milestone_only | 0.97 | 0.75 | Scores look inflated, but efficiency pressure is gone |
+| no_comm_bonus | 0.74 | 0.75 | Task 2 drops: coordination under misdirection degrades |
+| no_anti_hack | 0.82 | 0.75 | No impact on heuristic agents (they don't hack); matters for RL |
+
+Regenerate with:
 
 ```bash
-PYTHONPATH=. python round2/war_room/reward_ablation.py --output outputs/reward_ablation
+PYTHONPATH=. python round2/war_room/reward_ablation.py
+PYTHONPATH=. python round2/war_room/plot_ablation.py
 ```
 
-Current summary (fixed seeds):
+Artifacts: `outputs/reward_ablation/ablation_results.{csv,json,png}`.
 
-| Config | Avg Score | Resolved Rate | Interpretation |
-|---|---:|---:|---|
-| full | 0.8150 | 0.75 | Balanced objective |
-| milestone_only | 0.9675 | 0.75 | Inflates score without efficiency pressure |
-| no_comm_bonus | 0.7375 | 0.75 | Worse coordination quality |
-| no_anti_hack | 0.8150 | 0.75 | Baseline for future anti-hack-sensitive runs |
+## Generalization Beyond Scripted Tasks
 
-Artifacts:
-- `outputs/reward_ablation/ablation_results.json`
-- `outputs/reward_ablation/ablation_results.csv`
+Task 1–4 are hand-designed scenarios. To show the environment provides a trainable signal *beyond* those scripted cases, we procedurally generate 30 unseen scenarios per difficulty level and compare a no-op baseline against a generic reactive policy (inspects system state each round and reacts — not task-specific).
+
+![Generalization](outputs/war_room_eval/generalization.png)
+
+*Figure 4 — generalization on procedurally generated scenarios (30 seeds × 3 difficulty levels). The no-op baseline flatlines at 0.01 everywhere: the environment never hands out free points. The reactive policy scales smoothly with difficulty because the procedural generator scales fault count and phantom alert density. This is the signal a trained RL policy can climb.*
+
+| Difficulty | Baseline score | Reactive score | Avg milestones (reactive) |
+|---|---:|---:|---:|
+| Easy (1 fault, 0 phantoms) | 0.01 | 0.01 | 1.73 / ~2 |
+| Medium (2 faults, 2 phantoms) | 0.01 | 0.11 | 3.53 |
+| Hard (3 faults, 4 phantoms) | 0.01 | 0.60 | 5.30 |
+
+The reactive policy never fully resolves procedural scenarios (the `resolved_rate` is 0% across all difficulties) because full resolution requires root-cause identification — not just restarting crashed services. That headroom is exactly what a trained LLM is meant to close. Regenerate with:
+
+```bash
+PYTHONPATH=. python round2/war_room/eval_generalization.py --seeds 30
+```
+
+Artifact: `outputs/war_room_eval/generalization.{json,png}`.
 
 ## Training Curves
 
-> Training curves will be generated on-site with A100 compute credits. Run `python round2/war_room/generate_charts.py` after training to produce these plots.
+Real training run: Qwen2.5-7B-Instruct, LoRA rank 16, 91 GRPO episodes on a Hugging Face Job (L40S, 48 GB VRAM, ~$1.10 spend, 5 min 54 s wall clock). Adapter: [`brodie1of1/war-room-grpo-adapter`](https://huggingface.co/brodie1of1/war-room-grpo-adapter).
 
-<!-- After training, uncomment and update paths:
-![Reward Curve](outputs/war_room_grpo/training_curves.png)
-*Figure 1: Team reward over training episodes. Rolling 3-episode average shown in red.*
+![Training curve](outputs/war_room_grpo/training_curves.png)
 
-![Baseline vs Trained](outputs/war_room_grpo/baseline_vs_trained.png)
-*Figure 2: Per-task score comparison between untrained baseline and GRPO-trained agent.*
--->
+*Figure 1 — per-episode reward components during GRPO. Format and anti-hack saturate from step 1 (Qwen 7B already follows the protocol and never loops). Milestone reward is the growth edge: it averages 2.36 / 4 across 91 episodes and shows the model needs longer training to fully converge on task completion, not on output structure.*
+
+![Baseline vs trained](outputs/war_room_grpo/baseline_vs_trained.png)
+
+*Figure 2 — per-task final scores, scripted baseline (skill = 0.0) versus scripted expert (skill = 1.0). Composite 0.01 → 0.80. Reproducible in under a second: `PYTHONPATH=. python round2/war_room/demo_comparison.py`.*
 
 ## Training Pipeline
 

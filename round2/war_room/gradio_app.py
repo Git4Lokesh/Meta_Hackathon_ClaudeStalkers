@@ -419,12 +419,27 @@ def _milestone_html(milestones: list) -> str:
 def _reward_inspector_html(obs) -> str:
     """Render current reward component breakdown."""
     if obs is None:
-        return "<div style='color:#8b949e;font-style:italic;padding:8px'>No reward data yet.</div>"
+        return (
+            "<div style='background:#161b22;border:1px dashed #30363d;border-radius:8px;"
+            "padding:12px;color:#8b949e;font-size:0.85em'>"
+            "<div style='color:#c9d1d9;font-weight:700;margin-bottom:6px'>Reward Inspector</div>"
+            "Every step, this panel shows the live reward breakdown: "
+            "<code>milestone_credit − penalty_total + communication_bonus</code>. "
+            "Start an episode and step forward to watch each action change the signal."
+            "</div>"
+        )
     metadata = getattr(obs, "metadata", {}) or {}
     components = metadata.get("reward_components", {})
     penalties = metadata.get("penalty_reasons", [])
     if not components:
-        return "<div style='color:#8b949e;font-style:italic;padding:8px'>Reward components unavailable.</div>"
+        return (
+            "<div style='background:#161b22;border:1px dashed #30363d;border-radius:8px;"
+            "padding:12px;color:#8b949e;font-size:0.85em'>"
+            "<div style='color:#c9d1d9;font-weight:700;margin-bottom:6px'>Reward Inspector</div>"
+            "Reward components are available on this environment but not populated yet. "
+            "Step forward one round to populate."
+            "</div>"
+        )
     rows = [
         f"<tr><td style='padding:3px 8px'>{k}</td><td style='padding:3px 8px;text-align:right'><code>{v:.3f}</code></td></tr>"
         for k, v in components.items()
@@ -676,8 +691,26 @@ def _comm_timeline(messages: list, max_rounds: int) -> plt.Figure:
 def _belief_state_html():
     global env
     if env and hasattr(env, '_belief_tracker') and env._belief_tracker:
+        snapshot = env._belief_tracker.get_snapshot()
+        if snapshot.get("round", 0) == 0 and not snapshot.get("agents", {}):
+            return (
+                "<div style='background:#161b22;border:1px dashed #30363d;border-radius:8px;"
+                "padding:12px;color:#8b949e;font-size:0.85em'>"
+                "<div style='color:#c9d1d9;font-weight:700;margin-bottom:6px'>🧠 Theory of Mind Tracker</div>"
+                "Every round, this engine records what each agent believes about every "
+                "service and compares it against ground truth. Agents that push back on "
+                "false beliefs score on the <i>Deception Resistance</i> metric. Start an "
+                "episode to see beliefs evolve."
+                "</div>"
+            )
         return env._belief_tracker.format_html()
-    return "<div style='color:#8b949e;font-style:italic;padding:10px'>No Belief State Available. Start an episode.</div>"
+    return (
+        "<div style='background:#161b22;border:1px dashed #30363d;border-radius:8px;"
+        "padding:12px;color:#8b949e;font-size:0.85em'>"
+        "<div style='color:#c9d1d9;font-weight:700;margin-bottom:6px'>🧠 Theory of Mind Tracker</div>"
+        "No Belief State Available. Start an episode."
+        "</div>"
+    )
 
 
 def start_episode(task_id: str, seed: int, use_agent_mode: bool = False,
@@ -746,7 +779,16 @@ def start_episode(task_id: str, seed: int, use_agent_mode: bool = False,
     fig = _reward_plot([0.0])
     empty_flow = _comm_flow_graph([])
     empty_timeline = _comm_timeline([], 10)
-    thought_html = "<div style='color:#8b949e;font-style:italic;padding:10px'>No thoughts recorded yet. Enable Agent Mode.</div>"
+    thought_html = (
+        "<div style='background:#161b22;border:1px dashed #30363d;border-radius:8px;"
+        "padding:12px;color:#8b949e;font-size:0.85em'>"
+        "<div style='color:#bc8cff;font-weight:700;margin-bottom:6px'>💭 Agent Brain Scanner</div>"
+        "When Agent Mode is enabled, each agent produces a chain-of-thought inside "
+        "<code>&lt;internal_thought&gt;</code> tags. We parse it out and render it here so "
+        "you can read *why* the agent chose its command this round. Base models often show "
+        "panic heuristics; trained agents show evidence checks."
+        "</div>"
+    )
 
     return chat_html, system_html, fig, "Episode started. Click 'Next Round' to step.", _milestone_html([]), empty_flow, empty_timeline, _belief_state_html(), thought_html, _reward_inspector_html(current_obs), _round_trace_html()
 
@@ -839,6 +881,29 @@ def next_round(task_id: str):
                     f'<span style="color:{color};font-weight:700">{icon} @{label}</span>'
                     f'<div class="msg-bubble" style="border-left-color:{color}">{msg.content}</div>'
                     f'</div>'
+                )
+
+    # Theory of Mind: highlight pushback events from this round. These fire
+    # when an agent explicitly contradicts another agent's false belief (e.g.
+    # "Redis metrics are stale, the real issue is the DB password"). This is
+    # the single biggest behaviour the environment is designed to produce.
+    if env and getattr(env, "_belief_tracker", None):
+        tom_events = env._belief_tracker.get_snapshot().get("tom_events", [])
+        for ev in tom_events:
+            if ev.get("round") == round_num:
+                detector = ev.get("detector", "?").capitalize()
+                target = ev.get("target", "?").capitalize()
+                entity = ev.get("entity", "?")
+                quote = (ev.get("message", "") or "").strip()[:180]
+                chat_history.append(
+                    '<div class="agent-msg" style="border-left-color:#a371f7;'
+                    'background:linear-gradient(135deg,#2a1b41,#1a0a2a)">'
+                    '<span style="color:#bc8cff;font-weight:700">🧠 Theory of Mind moment</span>'
+                    '<div class="msg-bubble" style="border-left-color:#a371f7">'
+                    f'<b>{detector}</b> pushed back on <b>{target}</b>\'s belief about '
+                    f'<code>{entity}</code>. '
+                    f'<i>&ldquo;{quote}&rdquo;</i>'
+                    '</div></div>'
                 )
 
     # Update milestones
