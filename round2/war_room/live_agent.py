@@ -133,6 +133,18 @@ class LiveAgentConfig:
         url = self.api_base_url.rstrip("/")
         if ".endpoints.huggingface.cloud" in url and not url.endswith("/v1"):
             self.api_base_url = url + "/v1"
+        # Local servers (MLX, llama.cpp, vLLM) don't need a real token but
+        # the OpenAI client requires *some* string. Supply a placeholder so
+        # `is_ready()` returns True and the user can demo without a token.
+        if self._is_local_url() and not self.api_key:
+            self.api_key = "local-no-auth"
+
+    def _is_local_url(self) -> bool:
+        return (
+            "localhost" in self.api_base_url
+            or "127.0.0.1" in self.api_base_url
+            or self.api_base_url.startswith("http://0.0.0.0")
+        )
 
     def is_ready(self) -> bool:
         """True when we have enough config to call the API."""

@@ -990,18 +990,21 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                     chaos_btn = gr.Button("💥 INJECT CHAOS", variant="stop", scale=1)
 
                 # Agent Mode controls: toggle scripted vs LLM-driven rollout
-                with gr.Accordion("🤖 Agent Mode (Base vs Trained comparison)", open=True):
+                with gr.Accordion("🤖 Agent Mode (live LLM rollout)", open=True):
                     gr.Markdown(
                         "**Default (unchecked):** Scripted heuristic — acts like a "
                         "perfectly-trained agent. Resolves in 4-6 rounds with correct format.\n\n"
-                        "**Agent Mode (checked):** Live LLM rollout.\n"
-                        "- **🤖 Base Qwen 7B** — untrained baseline. Watch it kill healthy "
-                        "  nginx, follow executive panic, and loop.\n"
-                        "- **🎯 Trained Adapter** — our GRPO-trained model. Same base Qwen, "
-                        "  plus LoRA weights from our HF Jobs run.\n"
-                        "\n"
-                        "*The preset picker below switches between them. "
-                        "Advanced users can override the endpoint URL.*"
+                        "**Agent Mode (checked):** Live LLM rollout using the base "
+                        "**🤖 Qwen 7B** model. Watch it kill healthy nginx, follow "
+                        "executive panic, and loop — the untrained baseline the GRPO "
+                        "run is measured against.\n"
+                    )
+                    gr.Markdown(
+                        "> ℹ️ The trained adapter is published at "
+                        "[brodie1of1/war-room-grpo-adapter]"
+                        "(https://huggingface.co/brodie1of1/war-room-grpo-adapter). "
+                        "Loading requires peft + 15GB base weights, which exceeds "
+                        "free Space hardware. See README for local-loading instructions."
                     )
                     with gr.Row():
                         agent_mode_toggle = gr.Checkbox(
@@ -1010,10 +1013,11 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                             scale=1,
                         )
                         agent_preset = gr.Radio(
-                            choices=["🤖 Base Qwen 7B", "🎯 Trained Adapter"],
+                            choices=["🤖 Base Qwen 7B", "🎯 Trained (local MLX)"],
                             value="🤖 Base Qwen 7B",
                             label="Preset",
                             scale=2,
+                            info="Trained preset requires local MLX server — run bash scripts/run_mlx_server.sh on your M-series Mac first.",
                         )
                     with gr.Row():
                         model_name_input = gr.Textbox(
@@ -1030,12 +1034,14 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                         )
 
                     def _apply_preset(preset: str):
-                        """Update model/URL fields when preset changes."""
+                        """Auto-fill model/URL fields when the preset changes."""
                         if "Trained" in preset:
-                            # Our dedicated Inference Endpoint (L40S, 48GB VRAM)
+                            # Local MLX server (Apple Silicon). Start it with:
+                            #   bash scripts/run_mlx_server.sh
+                            # Then the Gradio UI connects at localhost:8080.
                             return (
-                                "tgi",  # TGI ignores model name, uses deployed repo
-                                "https://m0h5ypqs0i2gqw3j.us-east-1.aws.endpoints.huggingface.cloud/v1",
+                                "brodie1of1/war-room-7b-merged",
+                                "http://localhost:8080/v1",
                             )
                         return ("Qwen/Qwen2.5-7B-Instruct", "")
 
