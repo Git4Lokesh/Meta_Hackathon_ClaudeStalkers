@@ -981,24 +981,32 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                     chaos_btn = gr.Button("💥 INJECT CHAOS", variant="stop", scale=1)
 
                 # Agent Mode controls: toggle scripted vs LLM-driven rollout
-                with gr.Accordion("🤖 Agent Mode (use the trained LLM)", open=False):
+                with gr.Accordion("🤖 Agent Mode (Base vs Trained comparison)", open=True):
                     gr.Markdown(
-                        "When enabled, each round queries an LLM through the "
-                        "HF Inference Providers API. Set `HF_TOKEN` in your "
-                        "environment (or Space secrets). Leave model blank to "
-                        "use the base Qwen2.5-7B-Instruct, or paste our trained "
-                        "adapter `brodie1of1/war-room-grpo-adapter`."
+                        "**Default (unchecked):** Scripted heuristic — acts like a "
+                        "perfectly-trained agent. Resolves in 4-6 rounds with correct format.\n\n"
+                        "**Agent Mode (checked):** Live LLM rollout calling the "
+                        "**base Qwen2.5-7B** (untrained). Watch it kill healthy nginx, "
+                        "follow executive panic noise, and loop — exactly the mistakes our "
+                        "reward function catches. Our training evidence "
+                        "([metrics.json](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/outputs/war_room_grpo/metrics.json), "
+                        "[curves](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/outputs/war_room_grpo/training_curves.png)) "
+                        "shows GRPO learns to avoid these.\n\n"
+                        "*Note: HF Inference Providers only hosts base models; our trained "
+                        "LoRA adapter lives at "
+                        "[brodie1of1/war-room-grpo-adapter](https://huggingface.co/brodie1of1/war-room-grpo-adapter) "
+                        "and can be loaded locally via `peft`.*"
                     )
                     with gr.Row():
                         agent_mode_toggle = gr.Checkbox(
                             value=False,
-                            label="Enable Agent Mode (LLM-driven rollout)",
+                            label="Enable Agent Mode (live LLM, shows baseline failure modes)",
                             scale=1,
                         )
                         model_name_input = gr.Textbox(
                             value="Qwen/Qwen2.5-7B-Instruct",
-                            label="Model / Adapter",
-                            placeholder="e.g. brodie1of1/war-room-grpo-adapter",
+                            label="Model (HF Inference Providers)",
+                            placeholder="Qwen/Qwen2.5-7B-Instruct",
                             scale=2,
                         )
 
