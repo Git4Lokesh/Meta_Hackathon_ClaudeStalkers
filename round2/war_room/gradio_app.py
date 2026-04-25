@@ -1035,7 +1035,7 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                             # Our dedicated Inference Endpoint
                             return (
                                 "tgi",  # TGI ignores model name, uses deployed repo
-                                "https://k6cu78bokhtwi9ns.us-east-1.aws.endpoints.huggingface.cloud/v1",
+                                "https://j5c7zgwygcj2aug0.us-east-1.aws.endpoints.huggingface.cloud/v1",
                             )
                         return ("Qwen/Qwen2.5-7B-Instruct", "")
 
