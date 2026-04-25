@@ -459,6 +459,116 @@ def _parse_diagnosis_completion(text: str, round_num: int) -> AgentAction:
 
 
 # ============================================================
+# MULTI-ROLE STRUCTURED COMPLETION (TRAIN-EVAL ALIGNMENT)
+# ============================================================
+# Eval calls the LLM 3× per round (one per role: Triage, Diagnosis,
+# Remediation). The previous training pipeline only graded a single
+# Diagnosis completion at round 0, leaving Triage and Remediation
+# uncovered. To close that gap *within GRPO's "one completion = one
+# reward" constraint*, we ask the LLM to emit one structured plan
+# containing actions for all three roles. The reward is the full
+# multi-round episode score with that plan applied at round 0 and
+# fault-aware heuristics handling the follow-up rounds.
+#
+# This is not a perfect fix — eval still calls the model every round
+# rather than once — but it forces the LLM to learn each role's
+# vocabulary, observation grounding, and message etiquette in one
+# shot, which is the part eval actually rewards. Empirically the
+# adapter generalizes from "structured plan at round 0" to "live
+# action per round" because the MLX server in eval just samples from
+# the same conditional distribution; the prompt format is what
+# matters, not the rollout topology.
+
+_ROLE_PATTERN = re.compile(
+    r"^\s*###\s*(TRIAGE|DIAGNOSIS|REMEDIATION)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _split_role_blocks(text: str) -> dict[str, str]:
+    """Split a structured multi-role completion into per-role text blocks.
+
+    The LLM is prompted to emit::
+
+        ### TRIAGE
+        COMMAND: ...
+        MESSAGE_TO: ...
+        MESSAGE: ...
+
+        ### DIAGNOSIS
+        COMMAND: ...
+        ...
+
+    Missing or malformed sections fall back to empty strings so the
+    parser downstream just yields no-op AgentActions for that role.
+    The reward signal then comes from the format reward (penalises
+    skipped roles) and the milestone reward (no-op = no progress).
+    """
+    text = re.sub(r'```\w*\n?', '', text).strip('`').strip()
+    matches = list(_ROLE_PATTERN.finditer(text))
+    if not matches:
+        # No role headers found. Treat as a Diagnosis-only legacy
+        # completion *only* if it at least looks like a structured
+        # COMMAND/MESSAGE block; otherwise return empty so the format
+        # reward correctly punishes the lack of structure.
+        if "COMMAND:" in text.upper() or "MESSAGE:" in text.upper():
+            return {"triage": "", "diagnosis": text, "remediation": ""}
+        return {"triage": "", "diagnosis": "", "remediation": ""}
+
+    blocks: dict[str, str] = {"triage": "", "diagnosis": "", "remediation": ""}
+    for i, m in enumerate(matches):
+        role = m.group(1).lower()
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        blocks[role] = text[start:end].strip()
+    return blocks
+
+
+def _parse_role_block(text: str, role: str, round_num: int) -> AgentAction:
+    """Parse one role's COMMAND/MESSAGE_TO/MESSAGE block into AgentAction."""
+    if not text.strip():
+        return AgentAction(command="")
+
+    command = ""
+    msg_to = ""
+    msg_content = ""
+    for line in text.splitlines():
+        line = line.strip()
+        u = line.upper()
+        if u.startswith("COMMAND:"):
+            command = line.split(":", 1)[1].strip()
+        elif u.startswith("MESSAGE_TO:"):
+            msg_to = line.split(":", 1)[1].strip().lower()
+        elif u.startswith("MESSAGE:"):
+            msg_content = line.split(":", 1)[1].strip()
+
+    message = None
+    if msg_to and msg_to != "none" and msg_content:
+        message = Message(
+            from_agent=role,
+            to_agent=msg_to,
+            content=msg_content,
+            timestamp=datetime.now(),
+            round_number=round_num,
+        )
+    return AgentAction(command=command, message=message)
+
+
+def _parse_multirole_completion(text: str, round_num: int) -> MultiAgentAction:
+    """Parse a structured multi-role completion into a MultiAgentAction.
+
+    Robust to: missing roles (returns no-op), wrong role order, code
+    fences, leading/trailing prose, mixed-case headers.
+    """
+    blocks = _split_role_blocks(text)
+    return MultiAgentAction(
+        triage=_parse_role_block(blocks["triage"], "triage", round_num),
+        diagnosis=_parse_role_block(blocks["diagnosis"], "diagnosis", round_num),
+        remediation=_parse_role_block(blocks["remediation"], "remediation", round_num),
+    )
+
+
+# ============================================================
 # ROLLOUT FUNCTION  (official TRL + OpenEnv pattern)
 # ============================================================
 # Follows the Wordle example from TRL docs: the rollout runs a full
@@ -512,8 +622,21 @@ def _run_war_room_episode_inner(
     task_id: str,
     seed: int,
     policy_fn: Optional[Callable[[str, int], str]] = None,
+    multirole: bool = True,
 ) -> dict[str, float]:
-    """Inner episode logic (no timeout wrapper)."""
+    """Inner episode logic (no timeout wrapper).
+
+    When ``multirole=True`` (default), the round-0 completion is parsed
+    as a structured multi-role plan (### TRIAGE / ### DIAGNOSIS /
+    ### REMEDIATION) and used to drive *all three* agents at round 0.
+    This matches the eval topology where the LLM produces actions for
+    every role. Follow-up rounds use fault-aware heuristics so the
+    episode actually progresses toward late-stage milestones.
+
+    When ``multirole=False``, the legacy behavior applies: the
+    completion is parsed as a Diagnosis-only action and triage /
+    remediation come from heuristics from round 0 onward.
+    """
     env = WarRoomEnvironment()
     try:
         obs = env.reset(task_id=task_id, seed=seed)
@@ -525,14 +648,20 @@ def _run_war_room_episode_inner(
     rounds_used = 0
     use_legacy = _legacy_task(task_id)
 
+    multirole_round0: Optional[MultiAgentAction] = None
+    if multirole:
+        multirole_round0 = _parse_multirole_completion(completion_text, 0)
+
     for r in range(max_rounds):
         if obs.done:
             break
         rounds_used += 1
 
         # Diagnosis action: model completion on round 0, heuristic after
-        if r == 0:
+        if r == 0 and not multirole:
             diag_action = _parse_diagnosis_completion(completion_text, r)
+        elif r == 0 and multirole and multirole_round0 is not None:
+            diag_action = multirole_round0.diagnosis or AgentAction(command="")
         elif policy_fn is not None:
             next_comp = policy_fn(obs.diagnosis.text, r)
             diag_action = _parse_diagnosis_completion(next_comp, r)
@@ -547,7 +676,27 @@ def _run_war_room_episode_inner(
         if diag_action.message and diag_action.message.content:
             last_diag_msg = diag_action.message.content
 
-        if use_legacy:
+        # Round 0 in multirole mode: take triage + remediation from the
+        # parsed plan. If the model skipped a role, fall back to the
+        # heuristic so the episode still progresses (this gives the
+        # format reward — not the milestone reward — the job of
+        # penalising skipped roles).
+        if r == 0 and multirole and multirole_round0 is not None:
+            mr_triage = multirole_round0.triage
+            mr_remed = multirole_round0.remediation
+            if mr_triage and (mr_triage.command or mr_triage.message):
+                triage = mr_triage
+            elif use_legacy:
+                triage = _build_heuristic_triage(r, task_id)
+            else:
+                triage = _build_faultaware_triage(r, env)
+            if mr_remed and (mr_remed.command or mr_remed.message):
+                remediation = mr_remed
+            elif use_legacy:
+                remediation = _build_heuristic_remediation(r, task_id, last_diag_msg)
+            else:
+                remediation = _build_faultaware_remediation(r, env, last_diag_msg)
+        elif use_legacy:
             triage = _build_heuristic_triage(r, task_id)
             remediation = _build_heuristic_remediation(r, task_id, last_diag_msg)
         else:
@@ -603,7 +752,9 @@ def make_rollout_func(
         )
 
         def policy_fn(obs_text: str, round_num: int) -> str:
-            # We construct a prompt similar to generate_training_dataset
+            # Diagnosis-only follow-up generations (used by the rollout
+            # path). Round-0 plans flow through the structured multi-role
+            # parser, so this is only invoked for r >= 1 — keep it cheap.
             sys_prompt = DIAGNOSIS_SYSTEM_PROMPT
             prompt = f"<|im_start|>system\n{sys_prompt}<|im_end|>\n<|im_start|>user\n[Round {round_num}]\n{obs_text}\n\nWhat command do you want to run? What message do you want to send?<|im_end|>\n<|im_start|>assistant\n"
             input_ids = tokenizer.encode(prompt, return_tensors="pt").to(trainer.model.device)
@@ -724,26 +875,74 @@ def reward_milestone(completions, **kwargs) -> list[float]:
 
 
 def _milestone_reward_inline(completions, **kwargs) -> list[float]:
-    """Inline fallback — runs each completion through the env."""
+    """Inline fallback — runs each completion through the env.
+
+    Also records per-episode telemetry (rounds_used, milestones_hit,
+    seed, task) into the module-level _EPISODE_TELEMETRY list so the
+    metrics writer at the end of training can populate metrics.json
+    correctly. In TRL versions where rollout_func gets dropped (e.g.
+    GRPOTrainer.__init__ rejects the kwarg) the inline path is the
+    *only* place per-episode metrics are observable, so without this
+    rounds_used / milestones_achieved come out as zero in the saved
+    metrics — which is what bit us in the previous run.
+    """
     rewards = []
     task_id_raw = kwargs.get("task_id", "task1")
-    tid = task_id_raw[0] if isinstance(task_id_raw, list) else task_id_raw
+    task_ids: list[str]
+    if isinstance(task_id_raw, list):
+        task_ids = [str(t) for t in task_id_raw]
+    else:
+        task_ids = [str(task_id_raw)] * len(completions)
+    if len(task_ids) < len(completions):
+        task_ids = task_ids + [task_ids[-1]] * (len(completions) - len(task_ids))
+
     for i, completion in enumerate(completions):
+        tid = task_ids[i] if i < len(task_ids) else task_ids[-1]
+        seed = 42 + i + (hash(tid) & 0xFFFF)
         try:
             text = completion[0]["content"] if isinstance(completion, list) else str(completion)
-            ep = _run_war_room_episode(text, tid, 42 + i)
+            ep = _run_war_room_episode(text, tid, seed)
             rewards.append(ep["env_reward"])
+            _EPISODE_TELEMETRY.append({
+                "task": tid,
+                "seed": seed,
+                "env_reward": ep["env_reward"],
+                "rounds_used": ep["rounds_used"],
+                "milestones_hit": ep["milestones_hit"],
+            })
         except Exception:
             rewards.append(0.01)
+            _EPISODE_TELEMETRY.append({
+                "task": tid,
+                "seed": seed,
+                "env_reward": 0.01,
+                "rounds_used": 0,
+                "milestones_hit": 0,
+            })
     return rewards
 
 
 def reward_format(completions, **kwargs) -> list[float]:
-    """Score structural format compliance.
+    """Score structural multi-role format compliance.
 
-    1.0 = COMMAND + MESSAGE_TO + MESSAGE
-    0.5 = COMMAND only
-    0.0 = unparseable
+    The model must emit one block per role::
+
+        ### TRIAGE
+        COMMAND: ...
+        MESSAGE_TO: diagnosis
+        MESSAGE: ...
+
+        ### DIAGNOSIS
+        COMMAND: ...
+
+        ### REMEDIATION
+        COMMAND: ...
+
+    Scoring (max 1.0):
+      0.4 baseline split equally across the 3 role headers (~0.13 each)
+      0.6 split across {COMMAND, MESSAGE_TO, MESSAGE} keywords found
+          inside *any* role block (so partial credit for partial role
+          structure rather than all-or-nothing).
     """
     texts = kwargs.get("completion_text")
     rewards = []
@@ -756,17 +955,22 @@ def reward_format(completions, **kwargs) -> list[float]:
             except (IndexError, KeyError, TypeError):
                 text = str(completion)
 
-        text_upper = text.upper()
-        has_cmd = "COMMAND:" in text_upper
-        has_to = "MESSAGE_TO:" in text_upper
-        has_msg = "MESSAGE:" in text_upper
+        blocks = _split_role_blocks(text)
+        roles_present = sum(1 for b in blocks.values() if b.strip())
+        score = 0.4 * (roles_present / 3.0)
 
-        if has_cmd and has_to and has_msg:
-            rewards.append(1.0)
-        elif has_cmd:
-            rewards.append(0.5)
-        else:
-            rewards.append(0.0)
+        keyword_hits = 0
+        keyword_total = 0
+        for block in blocks.values():
+            block_upper = block.upper()
+            for kw in ("COMMAND:", "MESSAGE_TO:", "MESSAGE:"):
+                keyword_total += 1
+                if kw in block_upper:
+                    keyword_hits += 1
+        if keyword_total > 0:
+            score += 0.6 * (keyword_hits / keyword_total)
+
+        rewards.append(min(score, 1.0))
     return rewards
 
 
@@ -779,9 +983,10 @@ def reward_format_lenient(completions, **kwargs) -> list[float]:
     is too small for strict format compliance.
 
     Scoring (max 1.0):
-      0.3 baseline for any attempt at structured output
-      +0.2 for each of COMMAND/MESSAGE_TO/MESSAGE keyword
-      +0.1 for containing a Linux command verb (cat/grep/tail/ps/etc)
+      0.2 baseline for any attempt at structured output
+      +0.1 for each role header (### TRIAGE / ### DIAGNOSIS / ### REMEDIATION) up to 0.3
+      +0.15 for each of COMMAND/MESSAGE_TO/MESSAGE keyword found anywhere
+      +0.05 for containing a Linux command verb (cat/grep/tail/ps/etc)
     """
     valid_commands = (
         "cat ", "grep ", "tail ", "head ", "ps ", "top", "journalctl",
@@ -802,21 +1007,22 @@ def reward_format_lenient(completions, **kwargs) -> list[float]:
         text_lower = text.lower()
         score = 0.0
 
-        # Baseline for non-empty output
         if text.strip():
-            score += 0.3
+            score += 0.2
 
-        # Format keywords (partial credit each)
+        for role in ("TRIAGE", "DIAGNOSIS", "REMEDIATION"):
+            if f"### {role}" in text_upper or f"###{role}" in text_upper:
+                score += 0.1
+
         if "COMMAND:" in text_upper:
-            score += 0.2
+            score += 0.15
         if "MESSAGE_TO:" in text_upper:
-            score += 0.2
+            score += 0.15
         if "MESSAGE:" in text_upper:
-            score += 0.2
+            score += 0.15
 
-        # Bonus for containing a real command verb even without structure
         if any(cmd in text_lower for cmd in valid_commands):
-            score += 0.1
+            score += 0.05
 
         rewards.append(min(score, 1.0))
     return rewards
@@ -917,6 +1123,47 @@ MESSAGE_TO: <triage|remediation|all|none>
 MESSAGE: <your findings>"""
 
 
+# Multi-role system prompt — used for the structured-completion training
+# topology that matches eval (LLM controls all 3 roles per round).
+MULTIROLE_SYSTEM_PROMPT = """You are coordinating an SRE incident war room with three agents: TRIAGE, DIAGNOSIS, and REMEDIATION. You will produce a single response that contains an action plan for ALL THREE agents at the current round.
+
+Each agent has its own role:
+
+TRIAGE: monitors alerts and the system dashboard. Hands off the right service to investigate to DIAGNOSIS.
+- Useful commands: get_dashboard, get_alerts, list_services
+- Should send a MESSAGE_TO: diagnosis naming the affected service(s).
+
+DIAGNOSIS: investigates root cause by reading logs and inspecting the system.
+- Useful commands: cat <path>, grep <pat> <path>, tail [-n N] <path>, ps aux, top, journalctl -u <service>, dmesg
+- Should send a MESSAGE_TO: remediation with the specific finding (service name, PID, error keyword).
+
+REMEDIATION: fixes the issue with privileged actions.
+- Useful commands: systemctl restart <service>, kill <pid>, edit_config <path>, verify_service <service>
+- Should send a MESSAGE_TO: triage / all confirming the action.
+
+IMPORTANT RULES:
+- Don't blindly trust metrics from TRIAGE — DIAGNOSIS should cross-reference with logs.
+- Pass specific findings between agents (service names, PIDs, file paths, error keywords).
+- If a role has no useful action this round, leave its COMMAND empty but still emit the role header.
+
+Respond in EXACTLY this format (three blocks, in this order):
+
+### TRIAGE
+COMMAND: <triage_command_or_empty>
+MESSAGE_TO: <diagnosis|remediation|all|none>
+MESSAGE: <triage_message>
+
+### DIAGNOSIS
+COMMAND: <diagnosis_command_or_empty>
+MESSAGE_TO: <triage|remediation|all|none>
+MESSAGE: <diagnosis_message>
+
+### REMEDIATION
+COMMAND: <remediation_command_or_empty>
+MESSAGE_TO: <triage|diagnosis|all|none>
+MESSAGE: <remediation_message>"""
+
+
 def generate_training_dataset(
     tasks: list[str] | None = None,
     prompts_per_task: int = 10,
@@ -971,15 +1218,23 @@ def generate_training_dataset(
     for task_id in tasks:
         for i in range(prompts_per_task):
             obs = env.reset(task_id=task_id, seed=seed + i)
+            triage_obs = obs.triage.text
             diag_obs = obs.diagnosis.text
+            remed_obs = obs.remediation.text
             prompt_text = (
+                "[Round 0]\n\n"
+                "=== TRIAGE OBSERVATION ===\n"
+                f"{triage_obs}\n\n"
+                "=== DIAGNOSIS OBSERVATION ===\n"
                 f"{diag_obs}\n\n"
+                "=== REMEDIATION OBSERVATION ===\n"
+                f"{remed_obs}\n\n"
                 f"{_triage_msg_for(task_id, env)}\n\n"
-                f"What command do you want to run? What message do you want to send?"
+                "Produce the multi-role action plan for this round."
             )
             rows.append({
                 "prompt": [
-                    {"role": "system", "content": DIAGNOSIS_SYSTEM_PROMPT},
+                    {"role": "system", "content": MULTIROLE_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt_text},
                 ],
                 "task_id": task_id,
