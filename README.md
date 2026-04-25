@@ -20,7 +20,7 @@ tags:
 [![Tests](https://img.shields.io/badge/tests-146%20passing-brightgreen)](tests/)
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-compliant-blue)](https://github.com/meta-pytorch/OpenEnv)
 
-**Three AI agents. One war room. Zero downtime.**
+**OpenEnv environment first. Reward benchmark first. Training proof second.**
 
 An OpenEnv-compliant multi-agent RL environment where three specialized SRE agents (Triage, Diagnosis, Remediation) cooperate through a shared communication channel to diagnose and fix production infrastructure failures under partial observability, adversarial noise, and phantom alerts designed to test Theory of Mind.
 
@@ -29,8 +29,11 @@ An OpenEnv-compliant multi-agent RL environment where three specialized SRE agen
 | Resource | Link |
 |---|---|
 | Live Environment | [HF Spaces](https://huggingface.co/spaces/brodie1of1/war-room) |
-| Blog Post | [round2/war_room/blog_post.md](round2/war_room/blog_post.md) |
+| Blog Post | [round2/war_room/BLOG_POST.md](round2/war_room/BLOG_POST.md) |
 | Training Script (Colab) | [round2/war_room/train_colab.py](round2/war_room/train_colab.py) |
+| Reward Design Spec | [round2/war_room/REWARD_DESIGN.md](round2/war_room/REWARD_DESIGN.md) |
+| Reward Ablation Script | [round2/war_room/reward_ablation.py](round2/war_room/reward_ablation.py) |
+| Deterministic Eval | [round2/war_room/eval_deterministic.py](round2/war_room/eval_deterministic.py) |
 | Training Notebook | [round2/war_room/train_colab.ipynb](round2/war_room/train_colab.ipynb) |
 | T4 Quick Train | [round2/war_room/train_t4_quick.py](round2/war_room/train_t4_quick.py) |
 | Demo Comparison | [round2/war_room/demo_comparison.py](round2/war_room/demo_comparison.py) |
@@ -42,6 +45,13 @@ An OpenEnv-compliant multi-agent RL environment where three specialized SRE agen
 Production incidents at scale are never solved by one person. They require a triage engineer reading alerts, a diagnostician digging through logs, and a remediation engineer applying fixes. Each sees only part of the picture and must communicate effectively.
 
 This environment trains LLMs to handle **multi-agent cooperation under partial observability** — with phantom alerts, adversarial noise, and belief conflicts that force agents to develop Theory of Mind.
+
+## Positioning
+
+This repository is submitted as a reusable **OpenEnv training environment** for incident response, with reward design as the core contribution.
+
+- **Environment-native score** is computed by the task grader and exposed on every step.
+- **Trainer-side shaping** (format/anti-hack helpers in GRPO) is optimization support and does not redefine task success.
 
 ## What Makes This Environment Novel
 
@@ -90,17 +100,18 @@ This environment trains LLMs to handle **multi-agent cooperation under partial o
 | 5 | Expert | 20 | Rogue insider threat | Adversarial agent detection |
 | 6 | Expert | 25 | Blame game with conflicting reports | Trust calibration under deception |
 
-## Reward Design (5 Independent Signals)
+## Reward Design
 
-| Signal | Weight | What It Measures |
+| Layer | Signal | What It Measures |
 |---|---|---|
-| Milestone Progress | 0.60 | Did agents actually resolve the incident? |
-| Format Compliance | 0.15 | Does the output follow COMMAND/MESSAGE_TO/MESSAGE format? |
-| Communication Quality | 0.15 | Are messages actionable (service names, PIDs, file paths)? |
-| Anti-Hack Detection | 0.10 | Is the agent gaming the reward (loops, spam, repetition)? |
-| Deception Resistance | eval | Did agents detect phantom alerts and push back? |
+| Environment-native | Milestone + penalties + comm bonus | Did agents resolve correctly and efficiently? |
+| Trainer-side (GRPO) | Format shaping | Does generated output follow structured protocol? |
+| Trainer-side (GRPO) | Anti-hack gate | Is the policy exploiting loops/repetition/spam? |
+| Evaluation metric | Deception resistance | Did agents detect phantom alerts and push back? |
 
 Anti-reward-hacking checks: command loop detection (3+ consecutive), repetition detection (>5 total), message spam detection (Jaccard similarity >0.8).
+
+For exact formulas and constants, see `round2/war_room/REWARD_DESIGN.md`.
 
 ## Before/After Training Results
 
@@ -124,6 +135,27 @@ Improvement:                +0.7940
 ```
 
 The most striking qualitative change: untrained agents blindly follow whatever Triage says, even when evidence contradicts it. Trained agents learn to say "I checked Redis and it looks fine — the real issue is the database password." That pushback is Theory of Mind in action.
+
+## Reward Ablation Evidence
+
+Generated with:
+
+```bash
+PYTHONPATH=. python round2/war_room/reward_ablation.py --output outputs/reward_ablation
+```
+
+Current summary (fixed seeds):
+
+| Config | Avg Score | Resolved Rate | Interpretation |
+|---|---:|---:|---|
+| full | 0.8150 | 0.75 | Balanced objective |
+| milestone_only | 0.9675 | 0.75 | Inflates score without efficiency pressure |
+| no_comm_bonus | 0.7375 | 0.75 | Worse coordination quality |
+| no_anti_hack | 0.8150 | 0.75 | Baseline for future anti-hack-sensitive runs |
+
+Artifacts:
+- `outputs/reward_ablation/ablation_results.json`
+- `outputs/reward_ablation/ablation_results.csv`
 
 ## Training Curves
 
@@ -178,7 +210,7 @@ PYTHONPATH=. python round2/war_room/demo_comparison.py
 # Run the rich terminal demo
 PYTHONPATH=. python round2/war_room/demo_rich.py
 
-# Run tests (146 passing)
+# Run tests (166 passing)
 PYTHONPATH=. pytest tests/ -v
 
 # Start the FastAPI server
@@ -209,6 +241,13 @@ curl http://localhost:7860/health
 # Cell 3: Train (full GRPO, ~30-60 min on A100)
 !PYTHONPATH=. python round2/war_room/train_colab.py --episodes 30
 ```
+
+### Smoke Run vs Extended Run
+
+- **Smoke run (pipeline check):** `--episodes 5` to verify rollout, reward plumbing, and artifact generation quickly.
+- **Extended run (learning evidence):** `--episodes 30+` on A100 for interpretable reward trends.
+- **Deterministic eval:** `PYTHONPATH=. python round2/war_room/eval_deterministic.py`
+- **Reward ablation:** `PYTHONPATH=. python round2/war_room/reward_ablation.py`
 
 ## API
 
@@ -247,7 +286,7 @@ round2/war_room/
 
 ## Tests
 
-146 tests passing across unit and integration tests:
+166 tests passing across unit and integration tests:
 
 ```bash
 PYTHONPATH=. pytest tests/ -v

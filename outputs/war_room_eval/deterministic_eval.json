@@ -1,0 +1,272 @@
+{
+  "seeds": [
+    11,
+    22,
+    33,
+    44,
+    55
+  ],
+  "baseline": {
+    "rows": [
+      {
+        "task": "task1",
+        "seed": 11,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task1",
+        "seed": 22,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task1",
+        "seed": 33,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task1",
+        "seed": 44,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task1",
+        "seed": 55,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task2",
+        "seed": 11,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task2",
+        "seed": 22,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task2",
+        "seed": 33,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task2",
+        "seed": 44,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task2",
+        "seed": 55,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task3",
+        "seed": 11,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task3",
+        "seed": 22,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task3",
+        "seed": 33,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task3",
+        "seed": 44,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task3",
+        "seed": 55,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task4",
+        "seed": 11,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task4",
+        "seed": 22,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task4",
+        "seed": 33,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task4",
+        "seed": 44,
+        "score": 0.01,
+        "skill": 0.0
+      },
+      {
+        "task": "task4",
+        "seed": 55,
+        "score": 0.01,
+        "skill": 0.0
+      }
+    ],
+    "per_task_scores": {
+      "task1": 0.01,
+      "task2": 0.01,
+      "task3": 0.01,
+      "task4": 0.01
+    },
+    "composite": 0.01
+  },
+  "trained": {
+    "rows": [
+      {
+        "task": "task1",
+        "seed": 11,
+        "score": 0.99,
+        "skill": 1.0
+      },
+      {
+        "task": "task1",
+        "seed": 22,
+        "score": 0.99,
+        "skill": 1.0
+      },
+      {
+        "task": "task1",
+        "seed": 33,
+        "score": 0.99,
+        "skill": 1.0
+      },
+      {
+        "task": "task1",
+        "seed": 44,
+        "score": 0.99,
+        "skill": 1.0
+      },
+      {
+        "task": "task1",
+        "seed": 55,
+        "score": 0.99,
+        "skill": 1.0
+      },
+      {
+        "task": "task2",
+        "seed": 11,
+        "score": 0.46,
+        "skill": 1.0
+      },
+      {
+        "task": "task2",
+        "seed": 22,
+        "score": 0.46,
+        "skill": 1.0
+      },
+      {
+        "task": "task2",
+        "seed": 33,
+        "score": 0.46,
+        "skill": 1.0
+      },
+      {
+        "task": "task2",
+        "seed": 44,
+        "score": 0.46,
+        "skill": 1.0
+      },
+      {
+        "task": "task2",
+        "seed": 55,
+        "score": 0.46,
+        "skill": 1.0
+      },
+      {
+        "task": "task3",
+        "seed": 11,
+        "score": 0.88,
+        "skill": 1.0
+      },
+      {
+        "task": "task3",
+        "seed": 22,
+        "score": 0.88,
+        "skill": 1.0
+      },
+      {
+        "task": "task3",
+        "seed": 33,
+        "score": 0.88,
+        "skill": 1.0
+      },
+      {
+        "task": "task3",
+        "seed": 44,
+        "score": 0.88,
+        "skill": 1.0
+      },
+      {
+        "task": "task3",
+        "seed": 55,
+        "score": 0.88,
+        "skill": 1.0
+      },
+      {
+        "task": "task4",
+        "seed": 11,
+        "score": 0.93,
+        "skill": 1.0
+      },
+      {
+        "task": "task4",
+        "seed": 22,
+        "score": 0.93,
+        "skill": 1.0
+      },
+      {
+        "task": "task4",
+        "seed": 33,
+        "score": 0.93,
+        "skill": 1.0
+      },
+      {
+        "task": "task4",
+        "seed": 44,
+        "score": 0.93,
+        "skill": 1.0
+      },
+      {
+        "task": "task4",
+        "seed": 55,
+        "score": 0.93,
+        "skill": 1.0
+      }
+    ],
+    "per_task_scores": {
+      "task1": 0.99,
+      "task2": 0.4599999999999998,
+      "task3": 0.8800000000000001,
+      "task4": 0.93
+    },
+    "composite": 0.8039999999999999
+  },
+  "delta_composite": 0.7939999999999999
+}

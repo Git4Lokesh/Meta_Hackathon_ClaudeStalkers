@@ -270,6 +270,7 @@ def _run_war_room_episode(
     task_id: str,
     seed: int,
     timeout_seconds: int = 30,
+    policy_fn: Optional[Callable[[str, int], str]] = None,
 ) -> dict[str, float]:
     """Run one War Room episode with the model's completion as round-0
     Diagnosis action, heuristic co-agents for all roles, and heuristic
@@ -282,7 +283,7 @@ def _run_war_room_episode(
     """
     try:
         with episode_timeout(timeout_seconds):
-            return _run_war_room_episode_inner(completion_text, task_id, seed)
+            return _run_war_room_episode_inner(completion_text, task_id, seed, policy_fn)
     except (EpisodeTimeout, Exception) as e:
         if isinstance(e, EpisodeTimeout):
             print(f"[TIMEOUT] Episode on {task_id} exceeded {timeout_seconds}s", flush=True)
@@ -293,6 +294,7 @@ def _run_war_room_episode_inner(
     completion_text: str,
     task_id: str,
     seed: int,
+    policy_fn: Optional[Callable[[str, int], str]] = None,
 ) -> dict[str, float]:
     """Inner episode logic (no timeout wrapper)."""
     env = WarRoomEnvironment()
@@ -314,9 +316,13 @@ def _run_war_room_episode_inner(
         if r == 0:
             diag_action = _parse_diagnosis_completion(completion_text, r)
         else:
-            cmds = _FOLLOW_UP_CMDS.get(task_id, [""])
-            cmd = cmds[r - 1] if r - 1 < len(cmds) else ""
-            diag_action = AgentAction(command=cmd)
+            if policy_fn is not None:
+                next_comp = policy_fn(obs.diagnosis.text, r)
+                diag_action = _parse_diagnosis_completion(next_comp, r)
+            else:
+                cmds = _FOLLOW_UP_CMDS.get(task_id, [""])
+                cmd = cmds[r - 1] if r - 1 < len(cmds) else ""
+                diag_action = AgentAction(command=cmd)
 
         if diag_action.message and diag_action.message.content:
             last_diag_msg = diag_action.message.content
@@ -369,6 +375,22 @@ def make_rollout_func(
             else trainer.tokenizer
         )
 
+        def policy_fn(obs_text: str, round_num: int) -> str:
+            # We construct a prompt similar to generate_training_dataset
+            sys_prompt = DIAGNOSIS_SYSTEM_PROMPT
+            prompt = f"<|im_start|>system\n{sys_prompt}<|im_end|>\n<|im_start|>user\n[Round {round_num}]\n{obs_text}\n\nWhat command do you want to run? What message do you want to send?<|im_end|>\n<|im_start|>assistant\n"
+            input_ids = tokenizer.encode(prompt, return_tensors="pt").to(trainer.model.device)
+            with __import__("torch").no_grad():
+                gen = trainer.model.generate(
+                    input_ids,
+                    max_new_tokens=256,
+                    temperature=0.7,
+                    do_sample=True,
+                    pad_token_id=tokenizer.pad_token_id,
+                )
+            comp_ids = gen[0][input_ids.shape[1]:]
+            return tokenizer.decode(comp_ids, skip_special_tokens=True)
+
         # --- run each completion through the environment ---
         env_rewards: list[float] = []
         rounds_used: list[int] = []
@@ -383,7 +405,7 @@ def make_rollout_func(
             curriculum.advance()
             seed = random.randint(0, 100_000)
 
-            ep = _run_war_room_episode(text, task_id, seed)
+            ep = _run_war_room_episode(text, task_id, seed, policy_fn=policy_fn)
             env_rewards.append(ep["env_reward"])
             rounds_used.append(ep["rounds_used"])
             milestones_hit.append(ep["milestones_hit"])

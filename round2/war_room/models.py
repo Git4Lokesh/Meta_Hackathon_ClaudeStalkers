@@ -18,6 +18,7 @@ class AgentAction(BaseModel):
     """A single agent's action for one round."""
     command: str = ""                    # The command to execute (or empty for no-op)
     message: Optional[Message] = None   # Optional message to send
+    thought: str = ""                   # Agent's internal Chain-of-Thought
 
 
 class MultiAgentAction(BaseModel):
@@ -58,8 +59,10 @@ class RewardResult(BaseModel):
     team_reward: float = 0.0
     individual_rewards: dict[str, float] = Field(default_factory=dict)  # {role: reward}
     communication_reward: float = 0.0
+    reward_components: dict[str, float] = Field(default_factory=dict)
     milestones_achieved: list[str] = Field(default_factory=list)
     penalties_applied: list[str] = Field(default_factory=list)
+    penalty_reasons: list[str] = Field(default_factory=list)
     credit_assignment: dict[str, str] = Field(default_factory=dict)  # {milestone: agent_role}
     done: bool = False
 

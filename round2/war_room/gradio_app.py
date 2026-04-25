@@ -28,6 +28,8 @@ round_num = 0
 chat_history = []
 reward_history = []
 milestone_list = []
+thought_history = []
+round_trace = []
 
 # Live LLM runner (lazy init; only used when Agent Mode is enabled)
 live_runner: Optional[LiveAgentRunner] = None
@@ -414,6 +416,56 @@ def _milestone_html(milestones: list) -> str:
     return "".join(items)
 
 
+def _reward_inspector_html(obs) -> str:
+    """Render current reward component breakdown."""
+    if obs is None:
+        return "<div style='color:#8b949e;font-style:italic;padding:8px'>No reward data yet.</div>"
+    metadata = getattr(obs, "metadata", {}) or {}
+    components = metadata.get("reward_components", {})
+    penalties = metadata.get("penalty_reasons", [])
+    if not components:
+        return "<div style='color:#8b949e;font-style:italic;padding:8px'>Reward components unavailable.</div>"
+    rows = [
+        f"<tr><td style='padding:3px 8px'>{k}</td><td style='padding:3px 8px;text-align:right'><code>{v:.3f}</code></td></tr>"
+        for k, v in components.items()
+    ]
+    penalty_text = ", ".join(penalties) if penalties else "none"
+    return (
+        "<div style='background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px'>"
+        "<div style='color:#c9d1d9;font-weight:700;margin-bottom:6px'>Reward Inspector</div>"
+        "<table style='width:100%;color:#8b949e;font-size:0.85em'>"
+        + "".join(rows)
+        + "</table>"
+        f"<div style='margin-top:6px;color:#8b949e;font-size:0.8em'><b>penalties:</b> {penalty_text}</div>"
+        "</div>"
+    )
+
+
+def _round_trace_html() -> str:
+    """Render round-by-round interaction trace."""
+    if not round_trace:
+        return "<div style='color:#8b949e;font-style:italic;padding:8px'>No rounds yet.</div>"
+    rows = []
+    for item in round_trace[-12:]:
+        rows.append(
+            "<tr>"
+            f"<td>{item['round']}</td>"
+            f"<td><code>{item['triage'] or '-'}</code></td>"
+            f"<td><code>{item['diagnosis'] or '-'}</code></td>"
+            f"<td><code>{item['remediation'] or '-'}</code></td>"
+            f"<td>{item['reward']:.3f}</td>"
+            "</tr>"
+        )
+    return (
+        "<div style='background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px'>"
+        "<div style='color:#c9d1d9;font-weight:700;margin-bottom:6px'>Live Incident Playback</div>"
+        "<table style='width:100%;font-size:0.8em;color:#8b949e'>"
+        "<tr><th>R</th><th>Triage</th><th>Diagnosis</th><th>Remediation</th><th>Reward</th></tr>"
+        + "".join(rows)
+        + "</table></div>"
+    )
+
+
 def _reward_plot(rewards: list) -> plt.Figure:
     """Create a dark-themed reward progress plot with gradient fill and milestone markers."""
     plt.style.use('dark_background')
@@ -630,7 +682,7 @@ def _belief_state_html():
 
 def start_episode(task_id: str, seed: int, use_agent_mode: bool = False,
                   model_name: str = "", api_base_url: str = ""):
-    global env, current_obs, round_num, chat_history, reward_history, milestone_list
+    global env, current_obs, round_num, chat_history, reward_history, milestone_list, thought_history, round_trace
     global live_runner, agent_mode_enabled
 
     task_key = _parse_task_key(task_id)
@@ -640,6 +692,8 @@ def start_episode(task_id: str, seed: int, use_agent_mode: bool = False,
     chat_history = []
     reward_history = []
     milestone_list = []
+    thought_history = []
+    round_trace = []
 
     agent_mode_enabled = bool(use_agent_mode)
     if agent_mode_enabled:
@@ -692,22 +746,23 @@ def start_episode(task_id: str, seed: int, use_agent_mode: bool = False,
     fig = _reward_plot([0.0])
     empty_flow = _comm_flow_graph([])
     empty_timeline = _comm_timeline([], 10)
+    thought_html = "<div style='color:#8b949e;font-style:italic;padding:10px'>No thoughts recorded yet. Enable Agent Mode.</div>"
 
-    return chat_html, system_html, fig, "Episode started. Click 'Next Round' to step.", _milestone_html([]), empty_flow, empty_timeline, _belief_state_html()
+    return chat_html, system_html, fig, "Episode started. Click 'Next Round' to step.", _milestone_html([]), empty_flow, empty_timeline, _belief_state_html(), thought_html, _reward_inspector_html(current_obs), _round_trace_html()
 
 
 def next_round(task_id: str):
-    global current_obs, round_num, chat_history, reward_history, milestone_list
+    global current_obs, round_num, chat_history, reward_history, milestone_list, thought_history, round_trace
 
     task_key = _parse_task_key(task_id)
 
     if current_obs is None:
-        return "\n".join(chat_history), "<em>Start an episode first</em>", _reward_plot([0]), "Start an episode first.", _milestone_html([]), _comm_flow_graph([]), _comm_timeline([], 10), _belief_state_html()
+        return "\n".join(chat_history), "<em>Start an episode first</em>", _reward_plot([0]), "Start an episode first.", _milestone_html([]), _comm_flow_graph([]), _comm_timeline([], 10), _belief_state_html(), "".join(thought_history), _reward_inspector_html(current_obs), _round_trace_html()
 
     if current_obs.done:
         messages = env._channel.get_full_history() if env._channel else []
         max_r = env._max_rounds if hasattr(env, '_max_rounds') else 10
-        return "\n".join(chat_history), _service_status_html(env.state.simulated_system), _reward_plot(reward_history), "Episode complete!", _milestone_html(milestone_list), _comm_flow_graph(messages), _comm_timeline(messages, max_r), _belief_state_html()
+        return "\n".join(chat_history), _service_status_html(env.state.simulated_system), _reward_plot(reward_history), "Episode complete!", _milestone_html(milestone_list), _comm_flow_graph(messages), _comm_timeline(messages, max_r), _belief_state_html(), "".join(thought_history), _reward_inspector_html(current_obs), _round_trace_html()
 
     steps = HEURISTIC_STEPS.get(task_key, HEURISTIC_STEPS["task1"])
 
@@ -743,6 +798,13 @@ def next_round(task_id: str):
     current_obs = env.step(action)
     round_num += 1
     reward_history.append(current_obs.team_reward)
+    round_trace.append({
+        "round": round_num,
+        "triage": action.triage.command,
+        "diagnosis": action.diagnosis.command,
+        "remediation": action.remediation.command,
+        "reward": current_obs.team_reward,
+    })
 
     # Round separator with timestamp
     ts = datetime.now().strftime("%H:%M:%S")
@@ -757,6 +819,12 @@ def next_round(task_id: str):
             msg_to = a.message.to_agent if a.message else None
             msg_content = a.message.content if a.message else None
             chat_history.append(_format_chat_entry(role, a.command, msg_to, msg_content))
+        if hasattr(a, 'thought') and a.thought:
+            thought_history.append(
+                f'<div style="font-family: monospace; font-size: 0.85em; color: #a371f7; background: #2a1b41; padding: 8px; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid #8957e5;">'
+                f'<strong style="color: #bc8cff;">[{role.upper()}]</strong><br/>{a.thought}'
+                f'</div>'
+            )
 
     # Show executive/chaos monkey messages from the channel
     if env._channel:
@@ -801,7 +869,7 @@ def next_round(task_id: str):
     flow_fig = _comm_flow_graph(messages)
     timeline_fig = _comm_timeline(messages, max_r)
 
-    return chat_html, system_html, fig, status, _milestone_html(milestone_list), flow_fig, timeline_fig, _belief_state_html()
+    return chat_html, system_html, fig, status, _milestone_html(milestone_list), flow_fig, timeline_fig, _belief_state_html(), "".join(thought_history), _reward_inspector_html(current_obs), _round_trace_html()
 
 
 def auto_play(task_id: str, seed: int, use_agent_mode: bool = False,
@@ -821,7 +889,7 @@ def inject_chaos():
     """Inject a random failure mid-episode."""
     global current_obs
     if env._system is None:
-        return "\n".join(chat_history), _service_status_html({}), _reward_plot(reward_history), "Start an episode first!", _milestone_html([]), _comm_flow_graph([]), _comm_timeline([], 10), _belief_state_html()
+        return "\n".join(chat_history), _service_status_html({}), _reward_plot(reward_history), "Start an episode first!", _milestone_html([]), _comm_flow_graph([]), _comm_timeline([], 10), _belief_state_html(), "".join(thought_history), _reward_inspector_html(current_obs), _round_trace_html()
 
     result = env.inject_chaos()
 
@@ -837,7 +905,30 @@ def inject_chaos():
     messages = env._channel.get_full_history() if env._channel else []
     max_r = env._max_rounds if hasattr(env, '_max_rounds') else 10
 
-    return "\n".join(chat_history), system_html, _reward_plot(reward_history), f"💥 {result}", _milestone_html(milestone_list), _comm_flow_graph(messages), _comm_timeline(messages, max_r), _belief_state_html()
+    return "\n".join(chat_history), system_html, _reward_plot(reward_history), f"💥 {result}", _milestone_html(milestone_list), _comm_flow_graph(messages), _comm_timeline(messages, max_r), _belief_state_html(), "".join(thought_history), _reward_inspector_html(current_obs), _round_trace_html()
+
+
+def send_judge_message(msg: str, target_agent: str):
+    """Inject a custom message from the Judge (CEO) mid-episode."""
+    if env._system is None or not msg.strip():
+        messages = env._channel.get_full_history() if getattr(env, '_channel', None) else []
+        max_r = env._max_rounds if hasattr(env, '_max_rounds') else 10
+        return "\n".join(chat_history), _service_status_html({}), _reward_plot(reward_history), "Start an episode first!", _milestone_html([]), _comm_flow_graph(messages), _comm_timeline(messages, max_r), _belief_state_html(), "".join(thought_history), _reward_inspector_html(current_obs), _round_trace_html(), ""
+
+    env.inject_external_message(msg.strip(), from_agent="executive", to_agent=target_agent)
+
+    chat_history.append(
+        f'<div class="agent-msg" style="border-left-color:#f97316;background:#1a1000">'
+        f'<span style="color:#f97316;font-weight:700">👔 @CEO (Judge)</span>'
+        f'<div class="msg-bubble" style="border-left-color:#f97316">{msg.strip()}</div>'
+        f'</div>'
+    )
+
+    system_html = _service_status_html(env.state.simulated_system)
+    messages = env._channel.get_full_history() if env._channel else []
+    max_r = env._max_rounds if hasattr(env, '_max_rounds') else 10
+
+    return "\n".join(chat_history), system_html, _reward_plot(reward_history), f"Sent message to {target_agent}.", _milestone_html(milestone_list), _comm_flow_graph(messages), _comm_timeline(messages, max_r), _belief_state_html(), "".join(thought_history), _reward_inspector_html(current_obs), _round_trace_html(), ""
 
 
 # ---- Tab 2: Training Curves ----
@@ -988,6 +1079,21 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                     next_btn = gr.Button("⏭️ Next", scale=1)
                     auto_btn = gr.Button("⏩ Auto", variant="secondary", scale=1)
                     chaos_btn = gr.Button("💥 INJECT CHAOS", variant="stop", scale=1)
+                
+                # Live Judge Mode Row
+                with gr.Row():
+                    judge_input = gr.Textbox(
+                        label="👔 Live Judge Mode (Act as CEO)",
+                        placeholder="Type a message to interrupt the agents (e.g. 'Why is the site down? Fix it NOW!')",
+                        scale=5,
+                    )
+                    judge_target = gr.Dropdown(
+                        choices=["all", "triage", "diagnosis", "remediation"],
+                        value="all",
+                        label="Target Agent",
+                        scale=1,
+                    )
+                    judge_btn = gr.Button("📨 Send as CEO", variant="primary", scale=1)
 
                 # Agent Mode controls: toggle scripted vs LLM-driven rollout
                 with gr.Accordion("🤖 Agent Mode (live LLM rollout)", open=True):
@@ -1063,6 +1169,10 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                     with gr.Column(scale=1, min_width=200):
                         gr.Markdown("### 🧠 Theory of Mind Tracker")
                         belief_display = gr.HTML()
+                        gr.Markdown("### 💭 Agent Brain Scanner")
+                        thought_display = gr.HTML(elem_classes=["chat-container"])
+                        reward_inspector = gr.HTML()
+                        playback_trace = gr.HTML()
 
                     # CENTER 2: Graphs (comm flow + reward)
                     with gr.Column(scale=2, min_width=250):
@@ -1078,21 +1188,26 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                 start_btn.click(
                     start_episode,
                     inputs=[task_dropdown, seed_input, agent_mode_toggle, model_name_input, api_base_url_input],
-                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display],
+                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display, thought_display, reward_inspector, playback_trace],
                 )
                 next_btn.click(
                     next_round,
                     inputs=[task_dropdown],
-                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display],
+                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display, thought_display, reward_inspector, playback_trace],
                 )
                 auto_btn.click(
                     auto_play,
                     inputs=[task_dropdown, seed_input, agent_mode_toggle, model_name_input, api_base_url_input],
-                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display],
+                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display, thought_display, reward_inspector, playback_trace],
                 )
                 chaos_btn.click(
                     inject_chaos,
-                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display],
+                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display, thought_display, reward_inspector, playback_trace],
+                )
+                judge_btn.click(
+                    send_judge_message,
+                    inputs=[judge_input, judge_target],
+                    outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display, thought_display, reward_inspector, playback_trace, judge_input],
                 )
 
             # ---- Tab 2: Training Curves ----
