@@ -114,6 +114,37 @@ class TestFaultApplication:
                 return
         pytest.skip("No auth_failure fault sampled in 500 seeds")
 
+    def test_disk_full_inflates_disk_usage_and_spawns_logger(self):
+        """disk_full fault should: bump system.disk_usage above 95% AND
+        spawn a `{svc}_logger` worker that the agent must kill to recover."""
+        for seed in range(500):
+            task = ProceduralTask(difficulty=0.0)
+            system = task.create_initial_state(seed=seed)
+            if task._faults[0].fault_type == "disk_full":
+                svc_name = task._faults[0].target_service
+                # Disk usage was inflated
+                assert system.disk_usage["/"] >= 95
+                # Runaway logger process exists for the target service
+                logger_procs = [
+                    p for p in system.process_table.processes.values()
+                    if p.name == f"{svc_name}_logger"
+                ]
+                assert len(logger_procs) == 1
+                # Kill it and verify the disk_freed milestone fires
+                grader = task.create_grader()
+                disk_freed_ms = next(
+                    m for m in grader.milestones
+                    if m.name == f"remediation_frees_disk_{svc_name}"
+                )
+                # Before kill: not freed
+                assert disk_freed_ms.check(None, system, {}, None) is False
+                # After kill: freed, and disk_usage is auto-restored
+                system.kill_process(logger_procs[0].pid)
+                assert disk_freed_ms.check(None, system, {}, None) is True
+                assert system.disk_usage["/"] < 90
+                return
+        pytest.skip("No disk_full fault sampled in 500 seeds")
+
 
 class TestIntegrationWithEnvironment:
     """ProceduralTask should work end-to-end through WarRoomEnvironment."""

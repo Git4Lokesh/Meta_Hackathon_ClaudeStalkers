@@ -131,37 +131,57 @@ class RolloutAuditor:
 # CURRICULUM SCHEDULER  (RLVE-style adaptive, §22-23, §35, §46)
 # ============================================================
 
+_DEFAULT_BUILT_IN_TASKS = ["task1", "task2", "task3", "task4"]
+
+
 class CurriculumScheduler:
     """Selects tasks based on training progress AND model performance.
 
-    Phase-based baseline (task1 → task1+2 → task1-4) with adaptive
+    Phase-based baseline (easy → easy+medium → all) with adaptive
     override: if the model is crushing easy tasks (avg score > 0.7),
-    it advances to harder tasks earlier.  This follows the RLVE
-    principle of keeping the model near its capability frontier.
+    it advances to harder tasks earlier. Follows the RLVE principle
+    of keeping the model near its capability frontier.
+
+    The scheduler respects the user's ``--tasks`` argument: when the
+    user supplies custom tasks, the scheduler samples uniformly from
+    that list. Built-in phase-based behavior only activates when the
+    user explicitly trains on the default task1..task4 set.
     """
 
-    def __init__(self, total_steps: int) -> None:
+    def __init__(self, total_steps: int, allowed_tasks: list[str] | None = None) -> None:
         self.total_steps = total_steps
         self.current_step = 0
         self.tracker = PerformanceTracker()
+        self.allowed_tasks = list(allowed_tasks) if allowed_tasks else list(_DEFAULT_BUILT_IN_TASKS)
+        # Activate phase-based curriculum only for the canonical built-in set
+        self._use_phase_curriculum = set(self.allowed_tasks) <= set(_DEFAULT_BUILT_IN_TASKS)
 
     def get_task(self) -> str:
+        # Custom user tasks: uniform sampling from the user's list
+        if not self._use_phase_curriculum:
+            return random.choice(self.allowed_tasks)
+
         progress = self.current_step / max(self.total_steps, 1)
         avg = self.tracker.recent_avg_score(n=10)
 
+        # Filter built-in curriculum stages by what the user actually allowed
+        def _pick(candidates: list[str]) -> str:
+            filtered = [t for t in candidates if t in self.allowed_tasks]
+            return random.choice(filtered or self.allowed_tasks)
+
         # Adaptive override: if model is doing well, push harder earlier
         if avg >= 0.7 and progress < 0.6:
-            return random.choice(["task1", "task2", "task3"])
+            return _pick(["task1", "task2", "task3"])
         if avg >= 0.5 and progress < 0.3:
-            return random.choice(["task1", "task2"])
+            return _pick(["task1", "task2"])
 
         # Default phase-based curriculum
         if progress < 0.3:
-            return random.choice(["task1"])
+            return _pick(["task1"])
         elif progress < 0.6:
-            return random.choice(["task1", "task2"])
+            return _pick(["task1", "task2"])
         else:
-            return random.choice(["task1", "task2", "task3", "task4"])
+            return _pick(["task1", "task2", "task3", "task4"])
 
     def record(self, task_id: str, score: float, rounds: int) -> None:
         """Feed episode results back for adaptive scheduling."""
@@ -862,7 +882,10 @@ def train_grpo(
 
     # ---- Step 3: Curriculum + rollout ----
     print("\n[3/5] Setting up curriculum & rollout_func...")
-    curriculum = CurriculumScheduler(total_steps=len(train_dataset) * num_generations)
+    curriculum = CurriculumScheduler(
+        total_steps=len(train_dataset) * num_generations,
+        allowed_tasks=tasks,
+    )
     rollout_fn = make_rollout_func(curriculum)
     auditor = RolloutAuditor(
         os.path.join(output_dir, "rollout_audit.jsonl"), sample_rate=5,
