@@ -499,7 +499,7 @@ Anti-hack is enforced as a **multiplicative gate** (loops / repetition / spam ze
 
 > **"Does it generalize?"**
 
-Yes — to procedurally generated incidents the agent has never seen. See [Generalization](#b-generalization-across-60-unseen-procedural-seeds): `+0.46 / +0.88 / +0.96` deltas across 60 unseen seeds.
+Yes — to procedurally generated incidents the agent has never seen. See [Generalization](#b-generalization-across-60-unseen-procedural-seeds): `+0.46 / +0.88 / +0.97` deltas across 60 unseen seeds.
 
 > **"Is this production-ready?"**
 

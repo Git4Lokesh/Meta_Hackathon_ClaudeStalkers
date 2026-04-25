@@ -286,7 +286,10 @@ class WarRoomEnvironment(OpenEnvBase):
             prev_output=outputs.get("remediation", ""),
         )
 
-        # Build metadata
+        # Build metadata. score and milestones_achieved are exposed every step
+        # so callers that truncate the episode externally (e.g. training loops
+        # with a smaller round cap than the task's natural max) still see the
+        # current progress. The richer "done-only" fields stay gated below.
         metadata: dict[str, Any] = {
             "task_id": self._task_id,
             "round": self._round_number,
@@ -294,10 +297,10 @@ class WarRoomEnvironment(OpenEnvBase):
             "reward_components": reward_result.reward_components,
             "penalty_reasons": reward_result.penalty_reasons,
             "penalties_applied": reward_result.penalties_applied,
+            "score": reward_result.team_reward,
+            "milestones_achieved": reward_result.milestones_achieved,
         }
         if self._done:
-            metadata["score"] = reward_result.team_reward
-            metadata["milestones_achieved"] = reward_result.milestones_achieved
             metadata["credit_assignment"] = reward_result.credit_assignment
             metadata["adaptive_difficulty"] = self._performance_tracker.summary()
             # Include Belief State and Deception Score

@@ -14,6 +14,10 @@ dependencies = [
     "uvicorn>=0.24.0",
     "requests>=2.31.0",
     "openai>=1.0.0",
+    "huggingface_hub>=0.24.0",
+    "rich>=13.0.0",
+    "matplotlib>=3.8.0",
+    "gradio>=4.0.0",
 ]
 
 [project.optional-dependencies]
@@ -29,4 +33,4 @@ server = "sre_env.server.app:main"
 [tool.setuptools]
 include-package-data = true
 packages = ["sre_env", "sre_env.server", "sre_env.server.tasks"]
-package-dir = { "sre_env" = ".", "sre_env.server" = "server", "sre_env.server.tasks" = "server/tasks" }
+package-dir = { "sre_env" = "sre_env", "sre_env.server" = "sre_env/server", "sre_env.server.tasks" = "sre_env/server/tasks" }

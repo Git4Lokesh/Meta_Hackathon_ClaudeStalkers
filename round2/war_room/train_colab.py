@@ -472,7 +472,14 @@ _FOLLOW_UP_CMDS: dict[str, list[str]] = {
     "task4": ["cat /var/log/nginx/error.log", "ps aux"],
 }
 
-MAX_EPISODE_ROUNDS = 8  # cap for speed during training
+MAX_EPISODE_ROUNDS = 16  # cap for speed during training; matches procedural_hard.max_rounds so late milestones (remediation/verification) can fire
+
+# Per-episode telemetry recorded inside the rollout. The metrics writer at
+# the end of training reads this so format/communication/anti_hack reward
+# averages and rounds_used/milestones_hit aren't lost in TRL's log_history
+# key naming (which differs across versions: rewards/reward_format vs
+# rewards/reward_format_lenient vs rewards/<fn>/mean).
+_EPISODE_TELEMETRY: list[dict] = []
 
 
 def _run_war_room_episode(
@@ -629,6 +636,14 @@ def make_rollout_func(
             env_rewards.append(ep["env_reward"])
             rounds_used.append(ep["rounds_used"])
             milestones_hit.append(ep["milestones_hit"])
+
+            _EPISODE_TELEMETRY.append({
+                "task": task_id,
+                "seed": seed,
+                "env_reward": ep["env_reward"],
+                "rounds_used": ep["rounds_used"],
+                "milestones_hit": ep["milestones_hit"],
+            })
 
             # Feed results back for adaptive curriculum (RLVE-style)
             curriculum.record(task_id, ep["env_reward"], ep["rounds_used"])
@@ -1230,29 +1245,73 @@ def train_grpo(
     # ---- Metrics ----
     print("\nSaving metrics...")
     log_history = trainer.state.log_history
+
+    def _lookup(entry: dict, *needles: str, default: float = 0.0) -> float:
+        """Find the first key in entry whose name contains every needle.
+
+        TRL emits per-reward keys under several conventions across versions
+        (``rewards/<fn>``, ``rewards/<fn>/mean``, just ``<fn>`` for older
+        builds). We don't want a one-line lookup to silently return 0.0
+        because the format key is named ``reward_format_lenient`` instead
+        of ``reward_format`` (the bug from v1 of metrics.json)."""
+        needles_lower = [n.lower() for n in needles]
+        for k, v in entry.items():
+            kl = k.lower()
+            if all(n in kl for n in needles_lower) and isinstance(v, (int, float)):
+                return float(v)
+        return default
+
+    # The training-step log_history tracks aggregate TRL metrics (loss,
+    # mean reward etc.). _EPISODE_TELEMETRY captures the per-episode
+    # rounds_used / milestones_hit / task / seed straight from the rollout,
+    # which is what we actually want in metrics.json. We zip them by index
+    # against the step-level entries that contain a "loss" key.
+    step_entries = [h for h in log_history if "loss" in h]
+    n_episodes = len(_EPISODE_TELEMETRY)
+    n_steps = len(step_entries)
+
+    def _step_for_ep(ep_idx: int) -> dict:
+        if n_steps == 0:
+            return {}
+        # Map episode index → training step proportionally (multiple
+        # episodes per step when batch_size > 1).
+        s = min(int(ep_idx * n_steps / max(n_episodes, 1)), n_steps - 1)
+        return step_entries[s]
+
     metrics: dict = {
-        "episode": list(range(len(log_history))),
-        "task": [tasks[i % len(tasks)] for i in range(len(log_history))],
-        "team_reward": [
-            h.get("reward", h.get("rewards/reward_milestone", 0.0))
-            for h in log_history
-        ],
-        "rounds_used": [5] * len(log_history),
-        "milestones_achieved": [
-            int(h.get("reward", 0) * 9) for h in log_history
-        ],
-        "loss": [h.get("loss", 0.0) for h in log_history],
+        "episode": list(range(n_episodes)),
+        "task": [t["task"] for t in _EPISODE_TELEMETRY],
+        "seed": [t["seed"] for t in _EPISODE_TELEMETRY],
+        "team_reward": [t["env_reward"] for t in _EPISODE_TELEMETRY],
+        "rounds_used": [t["rounds_used"] for t in _EPISODE_TELEMETRY],
+        "milestones_achieved": [t["milestones_hit"] for t in _EPISODE_TELEMETRY],
+        "loss": [_step_for_ep(i).get("loss", 0.0) for i in range(n_episodes)],
         "format_reward_avg": [
-            h.get("rewards/reward_format", 0.0) for h in log_history
+            _lookup(_step_for_ep(i), "reward", "format") for i in range(n_episodes)
         ],
         "communication_reward_avg": [
-            h.get("rewards/reward_communication", 0.0) for h in log_history
+            _lookup(_step_for_ep(i), "reward", "communication") for i in range(n_episodes)
         ],
         "anti_hack_triggers": [
-            1 if h.get("rewards/reward_anti_hack", 1.0) < 0.5 else 0
-            for h in log_history
+            1 if _lookup(_step_for_ep(i), "reward", "anti_hack", default=1.0) < 0.5 else 0
+            for i in range(n_episodes)
         ],
     }
+    # If TRL log_history was empty (small smoke run), fall back to len()
+    if n_episodes == 0:
+        metrics["episode"] = list(range(len(step_entries)))
+        metrics["task"] = [tasks[i % len(tasks)] for i in range(len(step_entries))]
+        metrics["seed"] = [-1] * len(step_entries)
+        metrics["team_reward"] = [_lookup(h, "reward", "milestone") for h in step_entries]
+        metrics["rounds_used"] = [0] * len(step_entries)
+        metrics["milestones_achieved"] = [0] * len(step_entries)
+        metrics["loss"] = [h.get("loss", 0.0) for h in step_entries]
+        metrics["format_reward_avg"] = [_lookup(h, "reward", "format") for h in step_entries]
+        metrics["communication_reward_avg"] = [_lookup(h, "reward", "communication") for h in step_entries]
+        metrics["anti_hack_triggers"] = [
+            1 if _lookup(h, "reward", "anti_hack", default=1.0) < 0.5 else 0
+            for h in step_entries
+        ]
 
     metrics_path = os.path.join(output_dir, "metrics.json")
     with open(metrics_path, "w") as f:
