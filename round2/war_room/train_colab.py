@@ -919,13 +919,47 @@ def generate_training_dataset(
         "task4": "Message from @Triage: TWO incidents: nginx crashed AND data_processor memory leak.",
     }
 
+    def _triage_msg_for(task_id: str, env: WarRoomEnvironment) -> str:
+        """Build the triage handoff for any task.
+
+        For the 4 hardcoded scripted tasks, use the curated message above
+        (keeps v1 behavior bit-stable). For procedural / example_custom /
+        any future task, synthesize one by reading the sampled faults so
+        the Diagnosis prompt actually mentions the services it needs to
+        name. Without this, procedural prompts fall through to
+        "Check the system." and the model has no signal about which
+        service to diagnose — reward_std collapses to 0 and GRPO stalls.
+        """
+        curated = triage_msgs.get(task_id)
+        if curated is not None:
+            return curated
+        task_def = getattr(env, "_task_def", None)
+        faults = list(getattr(task_def, "_faults", []) or [])
+        if not faults:
+            # Fallback: read from the service registry
+            crashed = [
+                name for name, svc in env._system.service_registry.services.items()
+                if svc.status in ("crashed", "degraded")
+            ]
+            if not crashed:
+                return "Message from @Triage: Check the system."
+            return (
+                "Message from @Triage: Incidents on "
+                + ", ".join(crashed)
+                + ". Investigate each one."
+            )
+        parts = []
+        for f in faults:
+            parts.append(f"{f.target_service} ({f.fault_type.replace('_', ' ')})")
+        return "Message from @Triage: Active incidents — " + "; ".join(parts) + "."
+
     for task_id in tasks:
         for i in range(prompts_per_task):
             obs = env.reset(task_id=task_id, seed=seed + i)
             diag_obs = obs.diagnosis.text
             prompt_text = (
                 f"{diag_obs}\n\n"
-                f"{triage_msgs.get(task_id, 'Check the system.')}\n\n"
+                f"{_triage_msg_for(task_id, env)}\n\n"
                 f"What command do you want to run? What message do you want to send?"
             )
             rows.append({
