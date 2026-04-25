@@ -94,6 +94,7 @@ class WarRoomEnvironment(OpenEnvBase):
         # Create task and initial state
         task_cls = WAR_ROOM_TASK_REGISTRY[task_id]
         task_def = task_cls()
+        self._task_def = task_def  # exposed for introspecting heuristics/eval
         self._system = task_def.create_initial_state(seed)
         self._grader = task_def.create_grader()
         self._channel = CommunicationChannel()
