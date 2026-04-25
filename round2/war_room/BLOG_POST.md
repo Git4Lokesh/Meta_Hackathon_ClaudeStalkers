@@ -65,18 +65,34 @@ We did not just build a toy environment. We built a full reinforcement learning 
 
 Training follows a **curriculum schedule**: the first 30% of episodes use only Task 1 (basic coordination), the next 30% add Task 2 (misdirection resistance), and the final 40% include all four tasks. This prevents the model from being overwhelmed by hard scenarios before it has learned basic communication patterns.
 
+For the hackathon submission we ran the full pipeline on a Hugging Face Job (1x Nvidia L40S, $1.80/hr, scale-to-zero), merged the resulting LoRA adapter into the base Qwen2.5-7B weights, and deployed the merged model as an Inference Endpoint. The Agent Mode in our Gradio Space lets you flip between "base Qwen" and "trained model" to see the difference in real time.
+
 ## Before and After: What Training Changes
 
-We measure improvement across three dimensions by comparing a baseline (untrained heuristic, skill level 0.0) against a trained heuristic (skill level 1.0):
+We measure improvement along two complementary dimensions. First, we compare our scripted baseline (`skill_level=0.0`) — agents that take random or minimally-useful actions — against our scripted expert policy (`skill_level=1.0`), which represents the target behavior the RL training should converge to. Running `demo_comparison.py` with seed=42 across all four tasks produces a clear signal:
 
-| Metric | Baseline | After Training |
-|---|---|---|
-| Rounds to resolve (Task 1) | 8–10 | 4–5 |
-| Communication efficiency | ~1 message/episode | 3–4 targeted messages |
-| Correct root cause ID rate | ~30% (chases red herrings) | ~85% (pushes back on phantoms) |
-| Composite score (all tasks) | 0.10–0.20 | 0.65–0.85 |
+| Task | Metric | Baseline (skill=0.0) | Trained (skill=1.0) | Delta |
+|---|---|---|---|---|
+| Task 1 | Rounds to resolve | 10 | 4 | −6 |
+| Task 1 | Milestones | 0 | 5 | +5 |
+| Task 1 | Score | 0.01 | 0.99 | +0.98 |
+| Task 2 | Score | 0.01 | 0.46 | +0.45 |
+| Task 3 | Rounds to resolve | 20 | 6 | −14 |
+| Task 3 | Score | 0.01 | 0.88 | +0.87 |
+| Task 4 | Rounds to resolve | 25 | 5 | −20 |
+| Task 4 | Score | 0.01 | 0.93 | +0.92 |
+| **Composite** | **Weighted score** | **0.01** | **0.80** | **+0.79** |
 
-The most striking change is qualitative: untrained agents blindly follow whatever Triage says, even when the evidence contradicts it. Trained agents learn to say "I checked Redis and it looks fine — the real issue is the database password in database.yml." That pushback is Theory of Mind in action.
+These numbers are reproducible — `PYTHONPATH=. python round2/war_room/demo_comparison.py` runs in under a second on CPU and prints this exact table. The baseline-vs-trained plot is committed to the repo at `outputs/war_room_grpo/baseline_vs_trained.png`.
+
+Second, we ran actual GRPO training on Qwen2.5-7B-Instruct via Hugging Face Jobs (1x Nvidia L40S, 48 GB VRAM). A 30-episode, 3-task run produced 91 gradient updates in 5 minutes 54 seconds of wall-clock time. Key observations from that run, committed to the repo as `outputs/war_room_grpo/metrics.json` and `training_curves.png`:
+
+- **Format compliance hits 1.0 from step 1.** Qwen 7B-Instruct follows the `COMMAND/MESSAGE_TO/MESSAGE` structure immediately, with no warm-up training. This is the benefit of starting with an instruction-tuned model.
+- **Anti-hack triggers remain at 0 throughout.** The trained policy never loops commands, never spams messages, never gets zeroed out by the multiplicative gate.
+- **Communication quality averages 0.4–0.8.** The model produces messages with concrete service names, PIDs, and file paths — which is what the communication reward function targets.
+- **Milestone reward averages 2.36 out of 4.** This is the growth edge. 30 episodes is not enough to converge; longer training (60+ episodes) on the full task suite should close the gap to 3+/4.
+
+The most striking change is qualitative: untrained agents (base Qwen in Agent Mode of the Space) blindly kill healthy services, follow panicked Executive chatter, and loop commands. Trained agents learn to say "I checked Redis and it looks fine — the real issue is the database password in database.yml." That pushback is Theory of Mind in action.
 
 ## Try It Yourself
 

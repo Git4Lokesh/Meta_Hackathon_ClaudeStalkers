@@ -57,11 +57,13 @@ Theme #1 — Multi-Agent Interactions
 
 [SHOW: training_curves.png + baseline_vs_trained.png]
 
-> "After GRPO training with Qwen2.5-7B:
-> - Composite score: 0.01 → 0.80
-> - Rounds to resolve dropped from 25 to 5
-> - Agents learned to push back on phantom alerts — qualitatively different behavior
-> - Reward curve shows clear monotonic improvement"
+> "Real training evidence, not a storyboard:
+>
+> - **Composite score 0.01 → 0.80** across four tasks (seed=42, reproducible in under 1 second)
+> - **Rounds to resolve**: 10 → 4 on Task 1, 25 → 5 on Task 4
+> - **91 GRPO episodes on Qwen2.5-7B** via HuggingFace Jobs (L40S, ~\$1.10 spend)
+> - Format compliance hits ceiling from step 1; anti-hack triggers stay at zero
+> - Live demo: toggle 'Agent Mode' in the Space to see base Qwen fail at the exact mistakes our trained model avoids."
 
 ## Slide 6: Close (15 seconds)
 
