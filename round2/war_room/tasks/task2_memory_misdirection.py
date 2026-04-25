@@ -48,6 +48,16 @@ class MemoryMisdirectionTask(WarRoomTaskBase):
 
     def create_grader(self) -> MultiAgentGrader:
         leaking_pid = self._leaking_pid
+        # Track whether diagnosis has EVER run ps aux in this episode.
+        # Without this, the PID milestone is unreachable because you can't
+        # know the PID before running ps, so you need ps and PID-message on
+        # different rounds.
+        state = {"ps_ever_run": False}
+
+        def _did_diag_run_ps(actions: MultiAgentAction) -> bool:
+            if "ps" in actions.diagnosis.command:
+                state["ps_ever_run"] = True
+            return state["ps_ever_run"]
 
         milestones = [
             MultiAgentMilestone(
@@ -59,20 +69,20 @@ class MemoryMisdirectionTask(WarRoomTaskBase):
             MultiAgentMilestone(
                 name="diagnosis_identifies_pid",
                 credit=0.20,
-                description="Diagnosis runs ps aux and sends message containing the leaking PID",
+                description="Diagnosis ran ps aux at some point AND sends a message containing the leaking PID",
                 check=lambda actions, system, outputs, channel: (
-                    "ps" in actions.diagnosis.command
+                    _did_diag_run_ps(actions)
                     and _diagnosis_sends_pid(channel, leaking_pid)
                 ),
             ),
             MultiAgentMilestone(
                 name="diagnosis_reads_oom",
                 credit=0.10,
-                description="Diagnosis reads syslog and output contains OOM",
+                description="Diagnosis reads syslog and output contains OOM signal (case-insensitive, accepts 'oom-killer', 'Out of memory', 'OOM')",
                 check=lambda actions, system, outputs, channel: (
                     any(k in actions.diagnosis.command for k in ("cat", "tail", "grep"))
                     and "syslog" in actions.diagnosis.command
-                    and "OOM" in outputs.get("diagnosis", "")
+                    and _output_contains_oom(outputs.get("diagnosis", ""))
                 ),
             ),
             MultiAgentMilestone(
@@ -114,6 +124,24 @@ class MemoryMisdirectionTask(WarRoomTaskBase):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _output_contains_oom(output: str) -> bool:
+    """Return True if syslog-style output contains an OOM-killer signal.
+
+    Accepts common phrasings that appear in real kernel/systemd logs:
+      - 'OOM' / 'oom-killer' / 'oom_reaper' (case-insensitive)
+      - 'Out of memory' (the literal kernel message)
+      - 'Memory cgroup out of memory'
+
+    This replaces the original brittle check `"OOM" in output` which failed
+    against our own fixture because syslog says 'oom-killer' (lowercase) and
+    'Out of memory' rather than the uppercase three-letter string.
+    """
+    if not output:
+        return False
+    lower = output.lower()
+    return ("oom" in lower or "out of memory" in lower)
+
 
 def _triage_prioritizes_memory(channel: CommunicationChannel) -> bool:
     """Check if triage sent a message mentioning memory or OOM (not just CPU)."""

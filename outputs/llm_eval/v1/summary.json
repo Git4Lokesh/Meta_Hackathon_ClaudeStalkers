@@ -1,0 +1,31 @@
+{
+  "per_model_task": {
+    "base_qwen_7b": {
+      "task1": {
+        "avg_score": 0.774,
+        "avg_rounds": 10,
+        "avg_pushbacks": 0.8,
+        "resolved_rate": 0.0,
+        "n_seeds": 5
+      },
+      "task2": {
+        "avg_score": 0.348,
+        "avg_rounds": 15,
+        "avg_pushbacks": 5.4,
+        "resolved_rate": 0.0,
+        "n_seeds": 5
+      },
+      "task3": {
+        "avg_score": 0.01,
+        "avg_rounds": 20,
+        "avg_pushbacks": 16,
+        "resolved_rate": 0.0,
+        "n_seeds": 5
+      }
+    }
+  },
+  "overall_composite": {
+    "base_qwen_7b": 0.3773
+  },
+  "delta_composite": null
+}

@@ -30,6 +30,7 @@ FLAVOR="${FLAVOR:-l40sx1}"
 TIMEOUT="${TIMEOUT:-30m}"
 SEEDS="${SEEDS:-11 22 33 44 55}"
 TASKS="${TASKS:-task1 task2 task3}"
+ADAPTER_REPO="${ADAPTER_REPO:-brodie1of1/war-room-grpo-adapter}"
 
 INNER_CMD=$(cat <<'EOF'
 set -euo pipefail
@@ -67,6 +68,7 @@ mkdir -p outputs/llm_eval
 python round2/war_room/eval_llm_on_gpu.py \
     --seeds $SEEDS_ARG \
     --tasks $TASKS_ARG \
+    --adapter-repo "$ADAPTER_REPO_ARG" \
     --output-dir outputs/llm_eval \
   || { echo "Eval failed with exit $?"; ls -la outputs/llm_eval/ || true; exit 1; }
 
@@ -81,7 +83,7 @@ echo "=== [6/6] Push results to HF Hub ==="
 python - <<'PY'
 import os
 from huggingface_hub import HfApi, create_repo
-repo = "brodie1of1/war-room-grpo-adapter"
+repo = os.environ.get("ADAPTER_REPO_ARG", "brodie1of1/war-room-grpo-adapter")
 token = os.environ.get("HF_TOKEN")
 api = HfApi(token=token)
 # Upload results alongside the adapter so it all lives in one place.
@@ -107,6 +109,7 @@ echo "Flavor   : $FLAVOR"
 echo "Timeout  : $TIMEOUT"
 echo "Tasks    : $TASKS_ARG_JOINED"
 echo "Seeds    : $SEEDS_ARG_JOINED"
+echo "Adapter  : $ADAPTER_REPO"
 echo ""
 
 hf jobs run \
@@ -115,6 +118,7 @@ hf jobs run \
     --secrets HF_TOKEN \
     -e SEEDS_ARG="$SEEDS_ARG_JOINED" \
     -e TASKS_ARG="$TASKS_ARG_JOINED" \
+    -e ADAPTER_REPO_ARG="$ADAPTER_REPO" \
     --detach \
     pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel \
     bash -c "$INNER_CMD"

@@ -1,0 +1,175 @@
+{
+  "rows": [
+    {
+      "task": "task1",
+      "seed": 11,
+      "score": 0.63,
+      "rounds": 10,
+      "milestones": 3,
+      "pushbacks": 1,
+      "resolved": false,
+      "error": null,
+      "model": "base_qwen_7b"
+    },
+    {
+      "task": "task1",
+      "seed": 22,
+      "score": 0.82,
+      "rounds": 10,
+      "milestones": 4,
+      "pushbacks": 0,
+      "resolved": false,
+      "error": null,
+      "model": "base_qwen_7b"
+    },
+    {
+      "task": "task1",
+      "seed": 33,
+      "score": 0.86,
+      "rounds": 10,
+      "milestones": 4,
+      "pushbacks": 1,
+      "resolved": false,
+      "error": null,
+      "model": "base_qwen_7b"
+    },
+    {
+      "task": "task1",
+      "seed": 44,
+      "score": 0.67,
+      "rounds": 10,
+      "milestones": 3,
+      "pushbacks": 0,
+      "resolved": false,
+      "error": null,
+      "model": "base_qwen_7b"
+    },
+    {
+      "task": "task1",
+      "seed": 55,
+      "score": 0.89,
+      "rounds": 10,
+      "milestones": 4,
+      "pushbacks": 2,
+      "resolved": false,
+      "error": null,
+      "model": "base_qwen_7b"
+    },
+    {
+      "task": "task2",
+      "seed": 11,
+      "score": 0.44,
+      "rounds": 15,
+      "milestones": 4,
+      "pushbacks": 23,
+      "resolved": false,
+      "error": null,
+      "model": "base_qwen_7b"
+    },
+    {
+      "task": "task2",
+      "seed": 22,
+      "score": 0.14,
+      "rounds": 15,
+      "milestones": 2,
+      "pushbacks": 0,
+      "resolved": false,
+      "error": null,
+      "model": "base_qwen_7b"
+    },
+    {
+      "task": "task2",
+      "seed": 33,
+      "score": 0.39,
+      "rounds": 15,
+      "milestones": 3,
+      "pushbacks": 4,
+      "resolved": false,
+      "error": null,
+      "model": "base_qwen_7b"
+    },
+    {
+      "task": "task2",
+      "seed": 44,
+      "score": 0.55,
+      "rounds": 15,
+      "milestones": 4,
+      "pushbacks": 0,
+      "resolved": false,
+      "error": null,
+      "model": "base_qwen_7b"
+    },
+    {
+      "task": "task2",
+      "seed": 55,
+      "score": 0.22,
+      "rounds": 15,
+      "milestones": 3,
+      "pushbacks": 0,
+      "resolved": false,
+      "error": null,
+      "model": "base_qwen_7b"
+    },
+    {
+      "task": "task3",
+      "seed": 11,
+      "score": 0.01,
+      "rounds": 20,
+      "milestones": 1,
+      "pushbacks": 15,
+      "resolved": false,
+      "error": null,
+      "model": "base_qwen_7b"
+    },
+    {
+      "task": "task3",
+      "seed": 22,
+      "score": 0.01,
+      "rounds": 20,
+      "milestones": 1,
+      "pushbacks": 33,
+      "resolved": false,
+      "error": null,
+      "model": "base_qwen_7b"
+    },
+    {
+      "task": "task3",
+      "seed": 33,
+      "score": 0.01,
+      "rounds": 20,
+      "milestones": 1,
+      "pushbacks": 4,
+      "resolved": false,
+      "error": null,
+      "model": "base_qwen_7b"
+    },
+    {
+      "task": "task3",
+      "seed": 44,
+      "score": 0.01,
+      "rounds": 20,
+      "milestones": 1,
+      "pushbacks": 11,
+      "resolved": false,
+      "error": null,
+      "model": "base_qwen_7b"
+    },
+    {
+      "task": "task3",
+      "seed": 55,
+      "score": 0.01,
+      "rounds": 20,
+      "milestones": 1,
+      "pushbacks": 17,
+      "resolved": false,
+      "error": null,
+      "model": "base_qwen_7b"
+    }
+  ],
+  "n_seeds": 5,
+  "tasks": [
+    "task1",
+    "task2",
+    "task3"
+  ]
+}
