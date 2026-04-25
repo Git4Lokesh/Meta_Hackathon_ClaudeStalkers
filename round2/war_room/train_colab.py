@@ -138,30 +138,52 @@ class CurriculumScheduler:
     override: if the model is crushing easy tasks (avg score > 0.7),
     it advances to harder tasks earlier.  This follows the RLVE
     principle of keeping the model near its capability frontier.
+
+    The scheduler respects the user-provided task list passed to
+    ``train_colab.py --tasks ...``. If the caller provides an explicit
+    list, phase boundaries are computed within that list's ordering
+    (first ~third = easy, next ~third = medium, final ~third = full).
+    If the list is omitted, the legacy hardcoded schedule is used.
     """
 
-    def __init__(self, total_steps: int) -> None:
+    def __init__(
+        self,
+        total_steps: int,
+        tasks: list[str] | None = None,
+    ) -> None:
         self.total_steps = total_steps
         self.current_step = 0
         self.tracker = PerformanceTracker()
+        # Preserve user-specified task order; treat earlier entries as
+        # "easier" (curriculum ramps them in first).
+        self._tasks: list[str] = list(tasks) if tasks else [
+            "task1", "task2", "task3", "task4",
+        ]
 
     def get_task(self) -> str:
         progress = self.current_step / max(self.total_steps, 1)
         avg = self.tracker.recent_avg_score(n=10)
+        n = len(self._tasks)
+        if n == 0:
+            return "task1"  # defensive fallback
 
-        # Adaptive override: if model is doing well, push harder earlier
+        # Adaptive override: if model is doing well, push harder earlier.
+        # 'Harder' = include later entries in the user's task list.
         if avg >= 0.7 and progress < 0.6:
-            return random.choice(["task1", "task2", "task3"])
+            pool = self._tasks[: min(n, max(3, n // 2))]
+            return random.choice(pool)
         if avg >= 0.5 and progress < 0.3:
-            return random.choice(["task1", "task2"])
+            pool = self._tasks[: min(n, max(2, n // 3 or 1))]
+            return random.choice(pool)
 
-        # Default phase-based curriculum
+        # Default phase-based curriculum across the user's task list
         if progress < 0.3:
-            return random.choice(["task1"])
+            pool = self._tasks[: max(1, n // 3 or 1)]
         elif progress < 0.6:
-            return random.choice(["task1", "task2"])
+            pool = self._tasks[: max(2, (2 * n) // 3 or 2)]
         else:
-            return random.choice(["task1", "task2", "task3", "task4"])
+            pool = self._tasks
+        return random.choice(pool) if pool else self._tasks[0]
 
     def record(self, task_id: str, score: float, rounds: int) -> None:
         """Feed episode results back for adaptive scheduling."""
@@ -862,7 +884,10 @@ def train_grpo(
 
     # ---- Step 3: Curriculum + rollout ----
     print("\n[3/5] Setting up curriculum & rollout_func...")
-    curriculum = CurriculumScheduler(total_steps=len(train_dataset) * num_generations)
+    curriculum = CurriculumScheduler(
+        total_steps=len(train_dataset) * num_generations,
+        tasks=tasks,
+    )
     rollout_fn = make_rollout_func(curriculum)
     auditor = RolloutAuditor(
         os.path.join(output_dir, "rollout_audit.jsonl"), sample_rate=5,

@@ -199,3 +199,67 @@ class TestFaultSampling:
         for _ in range(50):
             f = _sample_fault(rng, set(), allowed_types=["crash"])
             assert f.target_service not in _CRITICAL_SERVICES
+
+
+class TestDiskFullFault:
+    """The disk_full primitive should: be sampleable, apply to the filesystem,
+    and have a milestone that fires when the bloated log gets cleared."""
+
+    def test_disk_full_is_sampleable(self):
+        rng = random.Random(0)
+        types_seen: set[str] = set()
+        # Sample enough times that the 5 fault types should all appear.
+        for _ in range(200):
+            spec = _sample_fault(rng, already_faulted=set())
+            types_seen.add(spec.fault_type)
+        assert "disk_full" in types_seen
+
+    def test_disk_full_injects_bloated_log_and_syslog_entry(self):
+        env = WarRoomEnvironment()
+        # Force disk_full by constructing a ProceduralTask and patching its
+        # sampler to emit only disk_full faults for this seed.
+        task = ProceduralTask(difficulty=0.5)
+        spec = FaultSpec(
+            fault_type="disk_full",
+            target_service="nginx",
+            params={"disk_percent": 98, "log_path": "/var/log/nginx/access.log"},
+        )
+        task._faults = [spec]
+        task._phantom_alerts = []
+        system = task._round1_task = None  # ensure no other state
+        from round2.war_room.tasks.procedural import _build_base_system, _apply_disk_full
+        system = _build_base_system(random.Random(0))
+        _apply_disk_full(system, spec)
+
+        # Bloated log file exists and is large.
+        content = system.filesystem.read_file("/var/log/nginx/access.log")
+        assert len(content) > 500
+
+        # Kernel / service syslog entries present.
+        log_messages = [e.message for e in system.log_buffer.entries]
+        assert any("No space left" in m for m in log_messages)
+        assert any("ENOSPC" in m for m in log_messages)
+
+    def test_disk_full_milestone_fires_when_log_truncated(self):
+        from round2.war_room.tasks.procedural import (
+            _make_milestones_for_fault,
+            _apply_disk_full,
+            _build_base_system,
+        )
+        spec = FaultSpec(
+            fault_type="disk_full",
+            target_service="nginx",
+            params={"disk_percent": 98, "log_path": "/var/log/nginx/access.log"},
+        )
+        system = _build_base_system(random.Random(0))
+        _apply_disk_full(system, spec)
+
+        milestones = _make_milestones_for_fault(spec)
+        remediation_m = next(m for m in milestones if m.name.startswith("remediation_clears_"))
+
+        # Before cleanup — milestone should not be satisfied.
+        assert remediation_m.check(None, system, {}, None) is False
+
+        # Simulate a log rotation / truncation.
+        system.filesystem.write_file(spec.params["log_path"], "")
+        assert remediation_m.check(None, system, {}, None) is True

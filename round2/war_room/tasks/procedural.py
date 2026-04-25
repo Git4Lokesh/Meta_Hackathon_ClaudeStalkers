@@ -65,7 +65,7 @@ _CRITICAL_SERVICES = {"postgres", "redis", "monitoring"}
 @dataclass
 class FaultSpec:
     """Describes a single fault to inject into the simulated system."""
-    fault_type: str  # "crash" | "memory_leak" | "cascade" | "auth_failure"
+    fault_type: str  # "crash" | "memory_leak" | "cascade" | "auth_failure" | "disk_full"
     target_service: str
     params: dict = field(default_factory=dict)
 
@@ -76,7 +76,9 @@ def _sample_fault(
     allowed_types: list[str] | None = None,
 ) -> FaultSpec:
     """Sample a random fault that doesn't overlap with already-faulted services."""
-    fault_types = allowed_types or ["crash", "memory_leak", "cascade", "auth_failure"]
+    fault_types = allowed_types or [
+        "crash", "memory_leak", "cascade", "auth_failure", "disk_full",
+    ]
     fault_type = rng.choice(fault_types)
 
     # Pick a target appropriate for the fault type
@@ -88,8 +90,11 @@ def _sample_fault(
     elif fault_type == "cascade":
         candidates = ["db_connector", "app_server", "load_balancer"]
         candidates = [s for s in candidates if s not in already_faulted]
-    else:  # auth_failure
+    elif fault_type == "auth_failure":
         candidates = ["db_connector"]
+        candidates = [s for s in candidates if s not in already_faulted]
+    else:  # disk_full — service writing too many logs
+        candidates = ["nginx", "app_server", "api_gateway", "data_processor"]
         candidates = [s for s in candidates if s not in already_faulted]
 
     if not candidates:
@@ -104,6 +109,9 @@ def _sample_fault(
     if fault_type == "memory_leak":
         params["leak_pid"] = 1000 + rng.randint(0, 99)
         params["memory_mb"] = rng.randint(2000, 3500)
+    elif fault_type == "disk_full":
+        params["disk_percent"] = rng.randint(96, 99)
+        params["log_path"] = f"/var/log/{target}/access.log"
     return FaultSpec(fault_type=fault_type, target_service=target, params=params)
 
 
@@ -243,11 +251,56 @@ def _apply_auth_failure(system: SimulatedSystem, fault: FaultSpec) -> None:
     )
 
 
+def _apply_disk_full(system: SimulatedSystem, fault: FaultSpec) -> None:
+    """Inject a disk-exhaustion fault: a service logging unbounded data
+    fills the disk, its writes start failing, and the service degrades.
+
+    The agent has to:
+      1. Notice the disk at 99% (via `df` output or metrics)
+      2. Identify which service's logs are bloated
+      3. Rotate/truncate the log file OR kill the offending process
+    """
+    svc_name = fault.target_service
+    svc = system.service_registry.services.get(svc_name)
+    if svc is None:
+        return
+    # Degrade the service but don't outright kill it (that's what crash does).
+    svc.status = "degraded"
+    # Write a large log file to the filesystem to simulate the bloat.
+    log_path = fault.params.get("log_path", f"/var/log/{svc_name}/access.log")
+    bloat_marker = "\n".join(
+        f"{svc_name}: [INFO] request {i} from 10.0.0.{i % 255} — OK"
+        for i in range(200)
+    )
+    try:
+        system.filesystem.write_file(log_path, bloat_marker)
+    except Exception:
+        pass
+    # System-wide disk alert in syslog so the agent can discover it
+    disk_pct = int(fault.params.get("disk_percent", 98))
+    system.log_buffer.append(
+        timestamp=system.current_time,
+        severity="ERROR",
+        source="kernel",
+        message=(
+            f"No space left on device — {log_path} "
+            f"(disk usage at {disk_pct}%)"
+        ),
+    )
+    system.log_buffer.append(
+        timestamp=system.current_time,
+        severity="WARN",
+        source=svc_name,
+        message=f"{svc_name}: writes failing — ENOSPC on {log_path}",
+    )
+
+
 _FAULT_APPLIERS: dict[str, Callable[[SimulatedSystem, FaultSpec], None]] = {
     "crash": _apply_crash,
     "memory_leak": _apply_memory_leak,
     "cascade": _apply_cascade,
     "auth_failure": _apply_auth_failure,
+    "disk_full": _apply_disk_full,
 }
 
 
@@ -286,51 +339,45 @@ def _sample_phantom_alerts(rng: random.Random, n: int, faulted_services: set[str
 # ---------------------------------------------------------------------------
 
 def _make_milestones_for_fault(fault: FaultSpec) -> list[MultiAgentMilestone]:
-    """Build milestones that check for resolution of a specific fault."""
+    """Build milestones that check for resolution of a specific fault.
+
+    Built on compositional primitives (below) so new fault types can be
+    added by picking the right set of primitive checks instead of writing
+    fresh lambdas from scratch.
+    """
     svc = fault.target_service
     milestones: list[MultiAgentMilestone] = []
 
     if fault.fault_type == "crash":
-        milestones.append(
-            MultiAgentMilestone(
-                name=f"diagnosis_reads_{svc}_logs",
-                credit=0.15,
-                description=f"Diagnosis reads {svc} error logs",
-                check=lambda actions, system, outputs, channel, svc=svc: (
-                    bool(outputs.get("diagnosis", "")) and svc in outputs.get("diagnosis", "").lower()
-                ),
-            )
-        )
-        milestones.append(
-            MultiAgentMilestone(
-                name=f"remediation_restarts_{svc}",
-                credit=0.30,
-                description=f"Remediation restarts {svc}",
-                check=lambda actions, system, outputs, channel, svc=svc: (
-                    system.service_registry.services.get(svc)
-                    and system.service_registry.services[svc].status == "running"
-                ),
-            )
-        )
+        milestones.append(diag_mentions_milestone(
+            name=f"diagnosis_reads_{svc}_logs",
+            svc=svc,
+            keywords=[svc],
+            credit=0.15,
+            description=f"Diagnosis reads {svc} error logs",
+        ))
+        milestones.append(service_running_milestone(
+            name=f"remediation_restarts_{svc}",
+            svc=svc,
+            credit=0.30,
+            description=f"Remediation restarts {svc}",
+        ))
     elif fault.fault_type == "memory_leak":
-        milestones.append(
-            MultiAgentMilestone(
-                name=f"diagnosis_identifies_{svc}_leak",
-                credit=0.15,
-                description=f"Diagnosis identifies memory leak in {svc}",
-                check=lambda actions, system, outputs, channel, svc=svc: (
-                    ("memory" in outputs.get("diagnosis", "").lower() or "oom" in outputs.get("diagnosis", "").lower())
-                    and svc in outputs.get("diagnosis", "").lower()
-                ),
-            )
-        )
+        milestones.append(diag_mentions_milestone(
+            name=f"diagnosis_identifies_{svc}_leak",
+            svc=svc,
+            keywords=[svc, "memory", "oom"],
+            credit=0.15,
+            require_all_keywords=False,  # memory/oom any + svc
+            must_include_svc=True,
+            description=f"Diagnosis identifies memory leak in {svc}",
+        ))
         milestones.append(
             MultiAgentMilestone(
                 name=f"remediation_kills_{svc}_worker",
                 credit=0.30,
                 description=f"Remediation kills the leaking {svc} worker process",
                 check=lambda actions, system, outputs, channel, svc=svc: (
-                    # Leaky worker process is gone
                     not any(
                         p.name.startswith(f"{svc}_worker")
                         for p in system.process_table.processes.values()
@@ -339,40 +386,31 @@ def _make_milestones_for_fault(fault: FaultSpec) -> list[MultiAgentMilestone]:
             )
         )
     elif fault.fault_type == "cascade":
-        milestones.append(
-            MultiAgentMilestone(
-                name=f"diagnosis_identifies_{svc}_cascade",
-                credit=0.15,
-                description=f"Diagnosis identifies {svc} as cascade root cause",
-                check=lambda actions, system, outputs, channel, svc=svc: (
-                    "cascade" in outputs.get("diagnosis", "").lower()
-                    or "dependency" in outputs.get("diagnosis", "").lower()
-                ),
-            )
-        )
-        milestones.append(
-            MultiAgentMilestone(
-                name=f"remediation_restores_{svc}",
-                credit=0.30,
-                description=f"Remediation restores {svc} and dependents",
-                check=lambda actions, system, outputs, channel, svc=svc: (
-                    system.service_registry.services.get(svc)
-                    and system.service_registry.services[svc].status == "running"
-                ),
-            )
-        )
+        milestones.append(diag_mentions_milestone(
+            name=f"diagnosis_identifies_{svc}_cascade",
+            svc=svc,
+            keywords=["cascade", "dependency"],
+            credit=0.15,
+            require_all_keywords=False,
+            must_include_svc=False,
+            description=f"Diagnosis identifies {svc} as cascade root cause",
+        ))
+        milestones.append(service_running_milestone(
+            name=f"remediation_restores_{svc}",
+            svc=svc,
+            credit=0.30,
+            description=f"Remediation restores {svc} and dependents",
+        ))
     elif fault.fault_type == "auth_failure":
-        milestones.append(
-            MultiAgentMilestone(
-                name=f"diagnosis_identifies_{svc}_auth",
-                credit=0.15,
-                description="Diagnosis identifies authentication failure",
-                check=lambda actions, system, outputs, channel: (
-                    "auth" in outputs.get("diagnosis", "").lower()
-                    or "password" in outputs.get("diagnosis", "").lower()
-                ),
-            )
-        )
+        milestones.append(diag_mentions_milestone(
+            name=f"diagnosis_identifies_{svc}_auth",
+            svc=svc,
+            keywords=["auth", "password"],
+            credit=0.15,
+            require_all_keywords=False,
+            must_include_svc=False,
+            description="Diagnosis identifies authentication failure",
+        ))
         milestones.append(
             MultiAgentMilestone(
                 name="remediation_fixes_password",
@@ -381,18 +419,115 @@ def _make_milestones_for_fault(fault: FaultSpec) -> list[MultiAgentMilestone]:
                 check=lambda actions, system, outputs, channel: _password_fixed(system),
             )
         )
-
-    # Universal communication milestone
-    milestones.append(
-        MultiAgentMilestone(
-            name=f"triage_escalates_{svc}",
-            credit=0.10,
-            description=f"Triage sends message mentioning {svc}",
-            check=lambda actions, system, outputs, channel, svc=svc: _triage_mentions(channel, svc),
+    elif fault.fault_type == "disk_full":
+        milestones.append(diag_mentions_milestone(
+            name=f"diagnosis_identifies_{svc}_disk",
+            svc=svc,
+            keywords=["disk", "space", "enospc", "full"],
+            credit=0.15,
+            require_all_keywords=False,
+            must_include_svc=False,
+            description=f"Diagnosis identifies disk-full condition on {svc}",
+        ))
+        milestones.append(
+            MultiAgentMilestone(
+                name=f"remediation_clears_{svc}_disk",
+                credit=0.30,
+                description=f"Remediation rotates/truncates bloated {svc} log file",
+                check=lambda actions, system, outputs, channel, svc=svc, fault=fault: _log_cleared(system, fault),
+            )
         )
-    )
+
+    # Universal communication milestone — present for every fault type.
+    milestones.append(triage_mentions_milestone(
+        name=f"triage_escalates_{svc}",
+        svc=svc,
+        credit=0.10,
+    ))
 
     return milestones
+
+
+# ---------------------------------------------------------------------------
+# Milestone primitives — composable, named, reusable across fault types
+# ---------------------------------------------------------------------------
+
+def diag_mentions_milestone(
+    *,
+    name: str,
+    svc: str,
+    keywords: list[str],
+    credit: float,
+    description: str,
+    require_all_keywords: bool = False,
+    must_include_svc: bool = True,
+) -> MultiAgentMilestone:
+    """Milestone that fires when Diagnosis' output mentions the target
+    service (and optionally additional keywords).
+
+    Args:
+        keywords: list of keywords to look for in the Diagnosis output.
+        require_all_keywords: if True, every keyword must appear. If False,
+            any one is enough.
+        must_include_svc: if True, the service name must also appear in
+            the output regardless of keywords.
+    """
+    def _check(actions, system, outputs, channel, svc=svc, keywords=keywords):
+        text = outputs.get("diagnosis", "").lower()
+        if not text:
+            return False
+        if must_include_svc and svc.lower() not in text:
+            return False
+        if not keywords:
+            return True
+        hits = [k.lower() in text for k in keywords]
+        return all(hits) if require_all_keywords else any(hits)
+
+    return MultiAgentMilestone(
+        name=name,
+        credit=credit,
+        description=description,
+        check=_check,
+    )
+
+
+def triage_mentions_milestone(
+    *,
+    name: str,
+    svc: str,
+    credit: float = 0.10,
+) -> MultiAgentMilestone:
+    """Milestone that fires when Triage sent any message referencing svc."""
+    return MultiAgentMilestone(
+        name=name,
+        credit=credit,
+        description=f"Triage sends message mentioning {svc}",
+        check=lambda actions, system, outputs, channel, svc=svc: _triage_mentions(channel, svc),
+    )
+
+
+def service_running_milestone(
+    *,
+    name: str,
+    svc: str,
+    credit: float,
+    description: str,
+) -> MultiAgentMilestone:
+    """Milestone that fires when the service's registry status is 'running'."""
+    return MultiAgentMilestone(
+        name=name,
+        credit=credit,
+        description=description,
+        check=lambda actions, system, outputs, channel, svc=svc: (
+            system.service_registry.services.get(svc) is not None
+            and system.service_registry.services[svc].status == "running"
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by milestone primitives
+# ---------------------------------------------------------------------------
 
 
 def _triage_mentions(channel: CommunicationChannel, keyword: str) -> bool:
@@ -410,6 +545,24 @@ def _password_fixed(system: SimulatedSystem) -> bool:
     except (ValueError, Exception):
         return False
     return "wrong_password_123" not in content
+
+
+def _log_cleared(system: SimulatedSystem, fault: FaultSpec) -> bool:
+    """True if the bloated log file has been rotated / truncated / removed.
+
+    We consider the milestone achieved if either:
+      - the file no longer exists (rotated / deleted), OR
+      - the file is materially smaller than the bloat we injected (truncated).
+    """
+    log_path = fault.params.get("log_path")
+    if not log_path:
+        return False
+    try:
+        content = system.filesystem.read_file(log_path)
+    except Exception:
+        # File not found counts as successful rotation.
+        return True
+    return len(content) < 500  # injected bloat is ~15 KB; anything small is "cleared"
 
 
 # ---------------------------------------------------------------------------
