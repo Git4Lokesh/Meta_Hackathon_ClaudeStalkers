@@ -12,7 +12,7 @@ tags:
 
 # 🔧 Multi-Agent Incident War Room
 
-**Three AI agents. One war room. Zero downtime.**
+**Three AI agents. One war room. Zero downtime. Efficient Communication**
 
 An OpenEnv-compliant multi-agent RL environment where three specialized SRE agents — Triage, Diagnosis, and Remediation — cooperate through a shared communication channel to diagnose and fix production infrastructure failures. No single agent can solve the incident alone.
 
