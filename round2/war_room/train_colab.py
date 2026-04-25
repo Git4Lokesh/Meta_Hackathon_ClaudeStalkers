@@ -893,9 +893,15 @@ def train_grpo(
         model=model,
         args=training_args,
         reward_funcs=reward_funcs,
-        reward_weights=reward_weights,
         train_dataset=train_dataset,
     )
+
+    # TRL 0.19+ takes reward_weights on the trainer; TRL 0.15-0.18 takes it
+    # on GRPOConfig instead. Try config first, fall back to trainer kwarg.
+    try:
+        training_args.reward_weights = reward_weights
+    except (AttributeError, TypeError):
+        trainer_kwargs["reward_weights"] = reward_weights
 
     # Pass rollout_func if TRL supports it (>= 0.15)
     try:
@@ -903,14 +909,31 @@ def train_grpo(
     except Exception:
         pass
 
-    try:
-        trainer = GRPOTrainer(processing_class=tokenizer, **trainer_kwargs)
-    except TypeError:
-        trainer_kwargs.pop("rollout_func", None)
-        try:
-            trainer = GRPOTrainer(processing_class=tokenizer, **trainer_kwargs)
-        except TypeError:
-            trainer = GRPOTrainer(tokenizer=tokenizer, **trainer_kwargs)
+    def _build_trainer(kwargs):
+        """Instantiate GRPOTrainer with maximal version compatibility.
+
+        Handles three TRL API shifts:
+          - tokenizer -> processing_class (0.15+)
+          - reward_weights on config vs trainer (0.19 flip)
+          - rollout_func optional kwarg (0.15+)
+        """
+        last_err = None
+        for tok_kw in ("processing_class", "tokenizer"):
+            for keep_rollout in (True, False):
+                for keep_reward_weights in (True, False):
+                    kw = dict(kwargs)
+                    if not keep_rollout:
+                        kw.pop("rollout_func", None)
+                    if not keep_reward_weights:
+                        kw.pop("reward_weights", None)
+                    try:
+                        return GRPOTrainer(**{tok_kw: tokenizer}, **kw)
+                    except TypeError as e:
+                        last_err = e
+                        continue
+        raise last_err
+
+    trainer = _build_trainer(trainer_kwargs)
 
     print("  ✅ GRPOTrainer configured (rollout_func pattern)")
 
