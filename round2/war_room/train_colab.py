@@ -340,14 +340,20 @@ def _build_faultaware_diagnosis_followup(round_num: int, env) -> Optional[AgentA
     the milestone-keyword message. That responsibility belongs to the
     learner (Diagnosis on round 0). This preserves a real reward
     gradient on the LLM completion.
+
+    Uses _diagnosis_command_for so memory_leak faults inspect dmesg
+    (which contains 'Out of memory ... data_processor_worker') rather
+    than journalctl (which is empty). Without this branch the
+    diagnosis_says_about(svc, ['memory', 'oom']) milestone never fires
+    and there's no reward signal for memory_leak in training.
     """
     faults = _discover_faults(env)
     if not faults:
         return None
     diag_idx = round_num - 1
     if 0 <= diag_idx < len(faults):
-        _, svc = faults[diag_idx]
-        return AgentAction(command=f"journalctl -u {svc}")
+        ftype, svc = faults[diag_idx]
+        return AgentAction(command=_diagnosis_command_for(ftype, svc))
     return None
 
 
