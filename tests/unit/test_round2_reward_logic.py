@@ -73,3 +73,26 @@ def test_anti_hack_detects_loop_and_spam():
         messages=["restart nginx now please", "restart nginx now please"],
     )
     assert spam_result.is_hacking
+
+
+def test_curriculum_respects_user_task_list():
+    """When the user supplies custom tasks, the curriculum samples from
+    that list instead of falling back to hard-coded task1..task4."""
+    from round2.war_room.train_colab import CurriculumScheduler
+
+    custom = ["my_task", "another_task"]
+    sched = CurriculumScheduler(total_steps=100, allowed_tasks=custom)
+    sampled = {sched.get_task() for _ in range(50)}
+    # Every sampled task must be from the user-supplied list
+    assert sampled.issubset(set(custom))
+    # And both should appear with high probability across 50 draws
+    assert sampled == set(custom)
+
+
+def test_curriculum_default_uses_built_in_phases():
+    """With no allowed_tasks, the scheduler defaults to task1..task4."""
+    from round2.war_room.train_colab import CurriculumScheduler
+
+    sched = CurriculumScheduler(total_steps=100)
+    sampled = {sched.get_task() for _ in range(50)}
+    assert sampled.issubset({"task1", "task2", "task3", "task4"})

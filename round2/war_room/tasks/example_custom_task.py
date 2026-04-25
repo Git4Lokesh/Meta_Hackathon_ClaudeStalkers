@@ -1,94 +1,96 @@
-"""Example of adding a custom War Room task using only the public primitives.
+"""Example: how a user adds their own War Room task.
 
-This module exists to demonstrate how to extend the environment **without
-touching any existing grader / reward / environment code**. Drop a new
-module like this in ``round2/war_room/tasks/``, register it in
-``WAR_ROOM_TASK_REGISTRY`` in ``round2/war_room/tasks/__init__.py``, and
-the Gradio UI, training loop, and OpenEnv REST API all start serving it
-automatically.
+This is a working, copy-pasteable template that demonstrates the three
+extension points of the environment:
 
-The task below injects a disk-full condition on ``api_gateway`` and uses
-the three compositional milestone primitives exported from
-``procedural.py`` — ``diag_mentions_milestone``,
-``triage_mentions_milestone``, and ``service_running_milestone`` — to
-define the rubric declaratively.
+  1. Subclass ``WarRoomTaskBase`` (4 methods)
+  2. Compose milestones from the named primitive helpers in ``procedural.py``
+  3. Register the task in ``WAR_ROOM_TASK_REGISTRY``
+
+After registration the task immediately works with:
+
+  - The OpenEnv API:        POST /reset {"task_id": "example_custom"}
+  - The Gradio dashboard:   appears in the task dropdown
+  - Deterministic eval:     eval_deterministic.py --tasks example_custom
+  - GRPO training:          train_colab.py --tasks example_custom
+
+No changes to the trainer, reward functions, or evaluation harness are
+required — the entire pipeline is task-agnostic by design.
+
+Run it::
+
+    PYTHONPATH=. python -c "
+    from round2.war_room.environment import WarRoomEnvironment
+    env = WarRoomEnvironment()
+    obs = env.reset(task_id='example_custom', seed=1)
+    print(obs.diagnosis.text[:400])
+    "
 """
 
 from __future__ import annotations
 
-import random
+from sre_env.server.simulated_system import SimulatedSystem
+from sre_env.server.models import ServiceRecord
 
 from round2.war_room.grader import MultiAgentGrader
 from round2.war_room.tasks.base import WarRoomTaskBase
 from round2.war_room.tasks.procedural import (
-    FaultSpec,
-    _apply_disk_full,
-    _build_base_system,
-    diag_mentions_milestone,
-    service_running_milestone,
-    triage_mentions_milestone,
+    diagnosis_says_about,
+    service_running,
+    triage_mentions,
 )
-from sre_env.server.simulated_system import SimulatedSystem
 
 
-class ApiGatewayDiskFullTask(WarRoomTaskBase):
-    """A single-fault disk-full scenario on ``api_gateway``.
+class ExampleCustomTask(WarRoomTaskBase):
+    """A 30-line custom task: ``payments_service`` has crashed.
 
-    Shows the minimal amount of code you need to author a new task. The
-    entire rubric is four lines of composed primitives — no lambdas.
+    Demonstrates the minimum surface area for adding a new scenario:
+    inject a fault, declare which milestones prove resolution, expose
+    an alert configuration. Everything else is automatic.
     """
 
-    task_id = "example_disk_full"
-    name = "Example: API Gateway Disk Full"
+    task_id = "example_custom"
+    name = "Payments Service Crash"
     description = (
-        "api_gateway's access log has filled the disk. Agents must detect "
-        "the ENOSPC condition, rotate or truncate the log file, and bring "
-        "api_gateway back to a healthy state."
+        "The payments_service has crashed. Triage must escalate, "
+        "diagnosis must inspect the service, remediation must restart it."
     )
     max_rounds = 12
-    difficulty = "medium"
-
-    def __init__(self) -> None:
-        self._fault = FaultSpec(
-            fault_type="disk_full",
-            target_service="api_gateway",
-            params={
-                "disk_percent": 98,
-                "log_path": "/var/log/api_gateway/access.log",
-            },
-        )
+    difficulty = "easy"
 
     def create_initial_state(self, seed: int) -> SimulatedSystem:
-        system = _build_base_system(random.Random(seed))
-        _apply_disk_full(system, self._fault)
+        system = SimulatedSystem()
+        # Boot a couple of healthy services
+        system.service_registry.services["postgres"] = ServiceRecord(
+            name="postgres", status="running", port=5432, dependencies=[],
+        )
+        # The faulted service: payments_service is crashed
+        system.service_registry.services["payments_service"] = ServiceRecord(
+            name="payments_service",
+            status="crashed",
+            port=9000,
+            dependencies=["postgres"],
+        )
+        system.log_buffer.append(
+            timestamp=system.current_time,
+            severity="ERROR",
+            source="payments_service",
+            message="payments_service crashed: stripe webhook handler raised KeyError('amount')",
+        )
         return system
 
     def create_grader(self) -> MultiAgentGrader:
-        svc = self._fault.target_service
+        # Composed declaratively from the milestone primitive library —
+        # zero lambdas, zero copy-pasted boilerplate.
         return MultiAgentGrader(
             milestones=[
-                triage_mentions_milestone(
-                    name="triage_flags_disk_full",
-                    svc=svc,
-                    credit=0.10,
-                ),
-                diag_mentions_milestone(
-                    name="diagnosis_identifies_enospc",
-                    svc=svc,
-                    keywords=["disk", "space", "enospc", "full"],
-                    credit=0.25,
-                    must_include_svc=False,
-                ),
-                service_running_milestone(
-                    name="remediation_restores_api_gateway",
-                    svc=svc,
-                    credit=0.40,
-                    description="api_gateway status returns to running",
-                ),
+                triage_mentions("payments_service", credit=0.20),
+                diagnosis_says_about("payments_service", ["crash", "error"], credit=0.20),
+                service_running("payments_service", credit=0.60),
             ],
         )
 
     def get_alert_config(self) -> dict[str, int]:
-        # Optional: bump api_gateway's dashboard prominence so Triage sees
-        # it first. Leaving the default is fine too.
-        return {"api_gateway": 1}
+        # Triage's dashboard sees the payments_service alert with
+        # high prominence — a 3 means "shown first".
+        return {"payments_service": 3}

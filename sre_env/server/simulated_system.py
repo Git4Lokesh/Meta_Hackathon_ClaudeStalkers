@@ -37,6 +37,10 @@ class SimulatedSystem:
         # config is valid (service may run) or False (service should crash).
         self.config_validators: Dict[str, Callable[["SimulatedSystem"], bool]] = {}
 
+        # Disk usage per mount-point (percent, 0-100). Tasks can mutate this
+        # to inject disk_full faults; ``df`` consults this dict.
+        self.disk_usage: Dict[str, int] = {"/": 45}
+
     # ------------------------------------------------------------------
     # Mutating operations
     # ------------------------------------------------------------------

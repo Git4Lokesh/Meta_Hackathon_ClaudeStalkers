@@ -125,10 +125,10 @@
       "agent": "trained",
       "difficulty": "procedural_easy",
       "seed": 5,
-      "score": 0.01,
-      "rounds": 27,
-      "milestones": 2,
-      "resolved": false
+      "score": 0.47,
+      "rounds": 3,
+      "milestones": 3,
+      "resolved": true
     },
     {
       "agent": "baseline",
@@ -143,10 +143,10 @@
       "agent": "trained",
       "difficulty": "procedural_easy",
       "seed": 6,
-      "score": 0.01,
-      "rounds": 27,
-      "milestones": 2,
-      "resolved": false
+      "score": 0.47,
+      "rounds": 3,
+      "milestones": 3,
+      "resolved": true
     },
     {
       "agent": "baseline",
@@ -215,10 +215,10 @@
       "agent": "trained",
       "difficulty": "procedural_easy",
       "seed": 10,
-      "score": 0.01,
-      "rounds": 27,
-      "milestones": 2,
-      "resolved": false
+      "score": 0.47,
+      "rounds": 3,
+      "milestones": 3,
+      "resolved": true
     },
     {
       "agent": "baseline",
@@ -341,10 +341,10 @@
       "agent": "trained",
       "difficulty": "procedural_easy",
       "seed": 17,
-      "score": 0.01,
-      "rounds": 27,
-      "milestones": 2,
-      "resolved": false
+      "score": 0.47,
+      "rounds": 3,
+      "milestones": 3,
+      "resolved": true
     },
     {
       "agent": "baseline",
@@ -485,10 +485,10 @@
       "agent": "trained",
       "difficulty": "procedural_medium",
       "seed": 5,
-      "score": 0.01,
-      "rounds": 22,
-      "milestones": 4,
-      "resolved": false
+      "score": 0.97,
+      "rounds": 5,
+      "milestones": 6,
+      "resolved": true
     },
     {
       "agent": "baseline",
@@ -503,10 +503,10 @@
       "agent": "trained",
       "difficulty": "procedural_medium",
       "seed": 6,
-      "score": 0.16,
-      "rounds": 22,
-      "milestones": 5,
-      "resolved": false
+      "score": 0.97,
+      "rounds": 5,
+      "milestones": 6,
+      "resolved": true
     },
     {
       "agent": "baseline",
@@ -575,10 +575,10 @@
       "agent": "trained",
       "difficulty": "procedural_medium",
       "seed": 10,
-      "score": 0.16,
-      "rounds": 22,
-      "milestones": 5,
-      "resolved": false
+      "score": 0.97,
+      "rounds": 5,
+      "milestones": 6,
+      "resolved": true
     },
     {
       "agent": "baseline",
@@ -611,10 +611,10 @@
       "agent": "trained",
       "difficulty": "procedural_medium",
       "seed": 12,
-      "score": 0.16,
-      "rounds": 22,
-      "milestones": 5,
-      "resolved": false
+      "score": 0.97,
+      "rounds": 5,
+      "milestones": 6,
+      "resolved": true
     },
     {
       "agent": "baseline",
@@ -647,9 +647,9 @@
       "agent": "trained",
       "difficulty": "procedural_medium",
       "seed": 14,
-      "score": 0.01,
+      "score": 0.16,
       "rounds": 22,
-      "milestones": 4,
+      "milestones": 5,
       "resolved": false
     },
     {
@@ -701,10 +701,10 @@
       "agent": "trained",
       "difficulty": "procedural_medium",
       "seed": 17,
-      "score": 0.16,
-      "rounds": 22,
-      "milestones": 5,
-      "resolved": false
+      "score": 0.97,
+      "rounds": 5,
+      "milestones": 6,
+      "resolved": true
     },
     {
       "agent": "baseline",
@@ -737,10 +737,10 @@
       "agent": "trained",
       "difficulty": "procedural_medium",
       "seed": 19,
-      "score": 0.16,
-      "rounds": 22,
-      "milestones": 5,
-      "resolved": false
+      "score": 0.97,
+      "rounds": 5,
+      "milestones": 6,
+      "resolved": true
     },
     {
       "agent": "baseline",
@@ -755,10 +755,10 @@
       "agent": "trained",
       "difficulty": "procedural_hard",
       "seed": 0,
-      "score": 0.6,
-      "rounds": 16,
-      "milestones": 7,
-      "resolved": false
+      "score": 0.99,
+      "rounds": 7,
+      "milestones": 9,
+      "resolved": true
     },
     {
       "agent": "baseline",
@@ -845,10 +845,10 @@
       "agent": "trained",
       "difficulty": "procedural_hard",
       "seed": 5,
-      "score": 0.6,
-      "rounds": 16,
-      "milestones": 7,
-      "resolved": false
+      "score": 0.99,
+      "rounds": 7,
+      "milestones": 9,
+      "resolved": true
     },
     {
       "agent": "baseline",
@@ -863,10 +863,10 @@
       "agent": "trained",
       "difficulty": "procedural_hard",
       "seed": 6,
-      "score": 0.9,
-      "rounds": 16,
-      "milestones": 8,
-      "resolved": false
+      "score": 0.99,
+      "rounds": 7,
+      "milestones": 9,
+      "resolved": true
     },
     {
       "agent": "baseline",
@@ -935,32 +935,32 @@
       "agent": "trained",
       "difficulty": "procedural_hard",
       "seed": 10,
-      "score": 0.9,
+      "score": 0.99,
+      "rounds": 7,
+      "milestones": 9,
+      "resolved": true
+    },
+    {
+      "agent": "baseline",
+      "difficulty": "procedural_hard",
+      "seed": 11,
+      "score": 0.01,
       "rounds": 16,
+      "milestones": 0,
+      "resolved": false
+    },
+    {
+      "agent": "trained",
+      "difficulty": "procedural_hard",
+      "seed": 11,
+      "score": 0.99,
+      "rounds": 7,
       "milestones": 8,
       "resolved": false
     },
     {
       "agent": "baseline",
       "difficulty": "procedural_hard",
-      "seed": 11,
-      "score": 0.01,
-      "rounds": 16,
-      "milestones": 0,
-      "resolved": false
-    },
-    {
-      "agent": "trained",
-      "difficulty": "procedural_hard",
-      "seed": 11,
-      "score": 0.9,
-      "rounds": 16,
-      "milestones": 7,
-      "resolved": false
-    },
-    {
-      "agent": "baseline",
-      "difficulty": "procedural_hard",
       "seed": 12,
       "score": 0.01,
       "rounds": 16,
@@ -971,9 +971,9 @@
       "agent": "trained",
       "difficulty": "procedural_hard",
       "seed": 12,
-      "score": 0.9,
-      "rounds": 16,
-      "milestones": 7,
+      "score": 0.99,
+      "rounds": 6,
+      "milestones": 8,
       "resolved": false
     },
     {
@@ -1007,9 +1007,9 @@
       "agent": "trained",
       "difficulty": "procedural_hard",
       "seed": 14,
-      "score": 0.6,
+      "score": 0.9,
       "rounds": 16,
-      "milestones": 7,
+      "milestones": 8,
       "resolved": false
     },
     {
@@ -1061,10 +1061,10 @@
       "agent": "trained",
       "difficulty": "procedural_hard",
       "seed": 17,
-      "score": 0.9,
-      "rounds": 16,
-      "milestones": 8,
-      "resolved": false
+      "score": 0.99,
+      "rounds": 7,
+      "milestones": 9,
+      "resolved": true
     },
     {
       "agent": "baseline",
@@ -1097,10 +1097,10 @@
       "agent": "trained",
       "difficulty": "procedural_hard",
       "seed": 19,
-      "score": 0.9,
-      "rounds": 16,
-      "milestones": 8,
-      "resolved": false
+      "score": 0.99,
+      "rounds": 7,
+      "milestones": 9,
+      "resolved": true
     }
   ],
   "summary": {
@@ -1113,12 +1113,12 @@
         "n_seeds": 20
       },
       "trained": {
-        "avg_score": 0.378,
-        "resolved_rate": 0.8,
-        "avg_rounds": 7.8,
+        "avg_score": 0.47,
+        "resolved_rate": 1.0,
+        "avg_rounds": 3.0,
         "n_seeds": 20
       },
-      "delta_score": 0.368
+      "delta_score": 0.46
     },
     "procedural_medium": {
       "label": "Medium (2 faults, 2 phantoms)",
@@ -1129,12 +1129,12 @@
         "n_seeds": 20
       },
       "trained": {
-        "avg_score": 0.632,
-        "resolved_rate": 0.55,
-        "avg_rounds": 11.75,
+        "avg_score": 0.89,
+        "resolved_rate": 0.85,
+        "avg_rounds": 6.65,
         "n_seeds": 20
       },
-      "delta_score": 0.622
+      "delta_score": 0.88
     },
     "procedural_hard": {
       "label": "Hard (3 faults, 4 phantoms)",
@@ -1145,12 +1145,12 @@
         "n_seeds": 20
       },
       "trained": {
-        "avg_score": 0.9,
-        "resolved_rate": 0.45,
-        "avg_rounds": 11.45,
+        "avg_score": 0.981,
+        "resolved_rate": 0.75,
+        "avg_rounds": 7.8,
         "n_seeds": 20
       },
-      "delta_score": 0.89
+      "delta_score": 0.971
     }
   }
 }

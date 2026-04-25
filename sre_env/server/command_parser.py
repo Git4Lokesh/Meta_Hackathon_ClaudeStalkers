@@ -237,10 +237,19 @@ class CommandParser:
         return "\n".join(lines)
 
     def _exec_df(self, parsed: ParsedCommand, system: SimulatedSystem) -> str:
-        return (
-            "Filesystem  Size  Used  Avail  Use%  Mounted on\n"
-            "/dev/sda1   100G  45G   55G    45%   /"
-        )
+        # Read disk usage from system state if available (procedural disk_full
+        # fault writes here). Falls back to a healthy default for older tasks.
+        disk_usage = getattr(system, "disk_usage", {"/": 45})
+        lines = ["Filesystem  Size  Used  Avail  Use%  Mounted on"]
+        for mount, pct in disk_usage.items():
+            pct = max(0, min(100, int(pct)))
+            used_gb = pct
+            avail_gb = 100 - pct
+            device = "/dev/sda1" if mount == "/" else f"/dev/sd{mount.strip('/') or 'a1'}"
+            lines.append(
+                f"{device:<11} 100G  {used_gb}G   {avail_gb}G    {pct}%   {mount}"
+            )
+        return "\n".join(lines)
 
     def _exec_free(self, parsed: ParsedCommand, system: SimulatedSystem) -> str:
         total_mem_mb = 8192.0

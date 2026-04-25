@@ -55,6 +55,14 @@ def _has_worker_processes(system, svc: str) -> list[int]:
     return pids
 
 
+def _has_logger_processes(system, svc: str) -> list[int]:
+    pids = []
+    for pid, p in system.process_table.processes.items():
+        if p.name == f"{svc}_logger":
+            pids.append(pid)
+    return pids
+
+
 def _baseline_action(env: WarRoomEnvironment, round_num: int) -> MultiAgentAction:
     """Low-effort untrained agent: spams dashboard, never coordinates."""
     return MultiAgentAction(
@@ -72,6 +80,8 @@ def _diagnosis_message_for(fault_type: str, svc: str) -> str:
         return f"{svc} is the cascade root cause — upstream dependency failure."
     if fault_type == "auth_failure":
         return f"{svc} authentication failed — wrong password in /etc/app/database.yml."
+    if fault_type == "disk_full":
+        return f"{svc} disk is full — no space left on device. Kill the runaway {svc}_logger worker."
     return f"{svc} crashed (signal 11) — restart {svc}."
 
 
@@ -82,6 +92,8 @@ def _diagnosis_command_for(fault_type: str, svc: str) -> str:
     if fault_type == "auth_failure":
         return f"journalctl -u {svc}"
     if fault_type == "cascade":
+        return f"journalctl -u {svc}"
+    if fault_type == "disk_full":
         return f"journalctl -u {svc}"
     return f"journalctl -u {svc}"
 
@@ -160,6 +172,15 @@ def _trained_action(env: WarRoomEnvironment, round_num: int) -> MultiAgentAction
                 remediation=AgentAction(
                     command='edit /etc/app/database.yml "wrong_password_123" "correct_db_pass_456"',
                 ),
+            )
+        if f.fault_type == "disk_full":
+            logger_pids = _has_logger_processes(system, f.target_service)
+            if logger_pids:
+                return MultiAgentAction(
+                    remediation=AgentAction(command=f"kill -9 {logger_pids[0]}"),
+                )
+            return MultiAgentAction(
+                remediation=AgentAction(command=f"systemctl restart {f.target_service}"),
             )
         return MultiAgentAction(
             remediation=AgentAction(command=f"systemctl restart {f.target_service}"),

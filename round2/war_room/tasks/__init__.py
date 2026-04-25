@@ -8,6 +8,7 @@ from round2.war_room.tasks.task4_simultaneous import SimultaneousIncidentsTask
 from round2.war_room.tasks.task5_rogue_insider import RogueInsiderTask
 from round2.war_room.tasks.task6_blame_game import BlameGameTask
 from round2.war_room.tasks.procedural import ProceduralTask
+from round2.war_room.tasks.example_custom_task import ExampleCustomTask
 
 WAR_ROOM_TASK_REGISTRY: dict[str, type[WarRoomTaskBase]] = {
     "task1": CoordinatedRestartTask,
@@ -23,6 +24,8 @@ WAR_ROOM_TASK_REGISTRY: dict[str, type[WarRoomTaskBase]] = {
     "procedural_easy": lambda: ProceduralTask(difficulty=0.2),
     "procedural_medium": lambda: ProceduralTask(difficulty=0.5),
     "procedural_hard": lambda: ProceduralTask(difficulty=0.9),
+    # Worked example: shows how a user adds their own task in ~30 lines.
+    "example_custom": ExampleCustomTask,
 }
 
 __all__ = [
@@ -34,5 +37,6 @@ __all__ = [
     "RogueInsiderTask",
     "BlameGameTask",
     "ProceduralTask",
+    "ExampleCustomTask",
     "WAR_ROOM_TASK_REGISTRY",
 ]
