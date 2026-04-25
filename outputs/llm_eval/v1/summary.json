@@ -1,31 +1,55 @@
 {
   "per_model_task": {
-    "base_qwen_7b": {
+    "base": {
       "task1": {
-        "avg_score": 0.774,
+        "avg_score": 0.778,
         "avg_rounds": 10,
         "avg_pushbacks": 0.8,
         "resolved_rate": 0.0,
         "n_seeds": 5
       },
       "task2": {
-        "avg_score": 0.348,
+        "avg_score": 0.068,
         "avg_rounds": 15,
-        "avg_pushbacks": 5.4,
+        "avg_pushbacks": 1.8,
         "resolved_rate": 0.0,
         "n_seeds": 5
       },
       "task3": {
         "avg_score": 0.01,
         "avg_rounds": 20,
-        "avg_pushbacks": 16,
+        "avg_pushbacks": 1,
+        "resolved_rate": 0.0,
+        "n_seeds": 5
+      }
+    },
+    "trained": {
+      "task1": {
+        "avg_score": 0.748,
+        "avg_rounds": 10,
+        "avg_pushbacks": 0,
+        "resolved_rate": 0.0,
+        "n_seeds": 5
+      },
+      "task2": {
+        "avg_score": 0.048,
+        "avg_rounds": 15,
+        "avg_pushbacks": 1.4,
+        "resolved_rate": 0.0,
+        "n_seeds": 5
+      },
+      "task3": {
+        "avg_score": 0.01,
+        "avg_rounds": 20,
+        "avg_pushbacks": 0.6,
         "resolved_rate": 0.0,
         "n_seeds": 5
       }
     }
   },
   "overall_composite": {
-    "base_qwen_7b": 0.3773
+    "base": 0.2853,
+    "trained": 0.2687
   },
-  "delta_composite": null
+  "delta_composite": -0.0166
 }
