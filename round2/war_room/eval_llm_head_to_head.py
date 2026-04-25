@@ -52,6 +52,23 @@ from round2.war_room.environment import WarRoomEnvironment
 from round2.war_room.live_agent import LiveAgentConfig, LiveAgentRunner
 
 
+def _resolve_hf_token() -> str | None:
+    """Pick up HF_TOKEN from env, or fall back to the on-disk HF cache.
+
+    `hf auth login` writes to ~/.cache/huggingface/token, and
+    huggingface_hub.get_token() reads that. If the user is logged in
+    but hasn't exported HF_TOKEN, this keeps the eval script working.
+    """
+    tok = os.environ.get("HF_TOKEN") or os.environ.get("API_KEY")
+    if tok:
+        return tok
+    try:
+        from huggingface_hub import get_token
+        return get_token()
+    except Exception:
+        return None
+
+
 TASKS = ["task1", "task2", "task3"]
 SEEDS = [11, 22, 33, 44, 55]
 OUTPUT_DIR = "outputs/llm_eval"
@@ -154,11 +171,15 @@ def run_model(label: str, cfg: dict[str, str]) -> list[dict[str, Any]]:
         model_name=cfg["model_name"],
         api_base_url=cfg["api_base_url"],
     )
+    # Ensure we have a token for non-local endpoints, even if HF_TOKEN
+    # isn't set in the shell (fall back to the `hf auth login` cache).
+    if not live_cfg.api_key and "localhost" not in live_cfg.api_base_url:
+        live_cfg.api_key = _resolve_hf_token()
     live_cfg.__post_init__()
     if not live_cfg.is_ready():
         print(
             f"  SKIP: {label} needs an API key for {live_cfg.api_base_url}"
-            " (set HF_TOKEN or log in)."
+            " (set HF_TOKEN or run `hf auth login`)."
         )
         return []
     runner = LiveAgentRunner(live_cfg)
