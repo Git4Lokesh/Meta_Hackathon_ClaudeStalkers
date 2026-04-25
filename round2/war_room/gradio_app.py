@@ -1032,10 +1032,10 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                     def _apply_preset(preset: str):
                         """Update model/URL fields when preset changes."""
                         if "Trained" in preset:
-                            # Our dedicated Inference Endpoint
+                            # Our dedicated Inference Endpoint (L40S, 48GB VRAM)
                             return (
                                 "tgi",  # TGI ignores model name, uses deployed repo
-                                "https://j5c7zgwygcj2aug0.us-east-1.aws.endpoints.huggingface.cloud/v1",
+                                "https://m0h5ypqs0i2gqw3j.us-east-1.aws.endpoints.huggingface.cloud/v1",
                             )
                         return ("Qwen/Qwen2.5-7B-Instruct", "")
 
