@@ -19,6 +19,7 @@ import numpy as np
 
 from round2.war_room.environment import WarRoomEnvironment
 from round2.war_room.models import MultiAgentAction, AgentAction, Message
+from round2.war_room.live_agent import LiveAgentConfig, LiveAgentRunner
 
 # ---- Global state ----
 env = WarRoomEnvironment()
@@ -27,6 +28,10 @@ round_num = 0
 chat_history = []
 reward_history = []
 milestone_list = []
+
+# Live LLM runner (lazy init; only used when Agent Mode is enabled)
+live_runner: Optional[LiveAgentRunner] = None
+agent_mode_enabled: bool = False
 
 ROLE_ICONS = {"triage": "🚨", "diagnosis": "🔎", "remediation": "🛠️"}
 ROLE_COLORS = {"triage": "#FFD700", "diagnosis": "#00CED1", "remediation": "#32CD32"}
@@ -623,8 +628,10 @@ def _belief_state_html():
     return "<div style='color:#8b949e;font-style:italic;padding:10px'>No Belief State Available. Start an episode.</div>"
 
 
-def start_episode(task_id: str, seed: int):
+def start_episode(task_id: str, seed: int, use_agent_mode: bool = False, model_name: str = ""):
     global env, current_obs, round_num, chat_history, reward_history, milestone_list
+    global live_runner, agent_mode_enabled
+
     task_key = _parse_task_key(task_id)
     env = WarRoomEnvironment()
     current_obs = env.reset(task_id=task_key, seed=seed)
@@ -632,6 +639,33 @@ def start_episode(task_id: str, seed: int):
     chat_history = []
     reward_history = []
     milestone_list = []
+
+    agent_mode_enabled = bool(use_agent_mode)
+    if agent_mode_enabled:
+        cfg = LiveAgentConfig()
+        if model_name and model_name.strip():
+            cfg.model_name = model_name.strip()
+        if not cfg.is_ready():
+            agent_mode_enabled = False
+            chat_history.append(
+                '<div class="agent-msg" style="border-left-color:#f85149;background:#3d0a0a">'
+                '<span style="color:#f85149;font-weight:700">⚠️ Agent Mode unavailable</span>'
+                '<div class="msg-bubble" style="border-left-color:#f85149">'
+                'HF_TOKEN / API_KEY not set. Falling back to heuristic mode. '
+                'Set a token in the environment or Space secrets to use the LLM.'
+                '</div></div>'
+            )
+        else:
+            live_runner = LiveAgentRunner(cfg)
+            live_runner.reset()
+            chat_history.append(
+                '<div class="agent-msg" style="border-left-color:#58a6ff;background:#0a1a2a">'
+                '<span style="color:#58a6ff;font-weight:700">🤖 Agent Mode active</span>'
+                f'<div class="msg-bubble" style="border-left-color:#58a6ff">'
+                f'Running with model <code>{cfg.model_name}</code> via <code>{cfg.api_base_url}</code>. '
+                'Each round queries the LLM for all three agents.'
+                '</div></div>'
+            )
 
     task_name = current_obs.metadata.get("task_name", task_key)
     difficulty = current_obs.metadata.get("difficulty", "?")
@@ -669,7 +703,29 @@ def next_round(task_id: str):
 
     steps = HEURISTIC_STEPS.get(task_key, HEURISTIC_STEPS["task1"])
 
-    if round_num >= len(steps):
+    # Choose action source: LLM (agent mode) vs scripted heuristic
+    if agent_mode_enabled and live_runner is not None:
+        try:
+            action = live_runner.step(
+                round_num=round_num + 1,
+                triage_obs=current_obs.triage.text,
+                diagnosis_obs=current_obs.diagnosis.text,
+                remediation_obs=current_obs.remediation.text,
+            )
+        except Exception as exc:
+            # On any LLM failure, fall back to scripted heuristic for this round
+            chat_history.append(
+                f'<div class="agent-msg" style="border-left-color:#f85149;background:#3d0a0a">'
+                f'<span style="color:#f85149;font-weight:700">⚠️ Agent Mode error</span>'
+                f'<div class="msg-bubble" style="border-left-color:#f85149">'
+                f'{exc}. Using scripted heuristic for round {round_num + 1}.'
+                f'</div></div>'
+            )
+            if round_num >= len(steps):
+                action = _reactive_action(round_num + 1)
+            else:
+                action = _build_action(steps[round_num], round_num + 1)
+    elif round_num >= len(steps):
         # Reactive fallback: check for crashed services and try to fix them
         action = _reactive_action(round_num + 1)
     else:
@@ -740,9 +796,9 @@ def next_round(task_id: str):
     return chat_html, system_html, fig, status, _milestone_html(milestone_list), flow_fig, timeline_fig, _belief_state_html()
 
 
-def auto_play(task_id: str, seed: int):
+def auto_play(task_id: str, seed: int, use_agent_mode: bool = False, model_name: str = ""):
     """Run entire episode automatically."""
-    result = start_episode(task_id, seed)
+    result = start_episode(task_id, seed, use_agent_mode, model_name)
 
     for _ in range(30):  # Max iterations
         if current_obs and current_obs.done:
@@ -924,6 +980,28 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                     auto_btn = gr.Button("⏩ Auto", variant="secondary", scale=1)
                     chaos_btn = gr.Button("💥 INJECT CHAOS", variant="stop", scale=1)
 
+                # Agent Mode controls: toggle scripted vs LLM-driven rollout
+                with gr.Accordion("🤖 Agent Mode (use the trained LLM)", open=False):
+                    gr.Markdown(
+                        "When enabled, each round queries an LLM through the "
+                        "HF Inference Providers API. Set `HF_TOKEN` in your "
+                        "environment (or Space secrets). Leave model blank to "
+                        "use the base Qwen2.5-7B-Instruct, or paste our trained "
+                        "adapter `brodie1of1/war-room-grpo-adapter`."
+                    )
+                    with gr.Row():
+                        agent_mode_toggle = gr.Checkbox(
+                            value=False,
+                            label="Enable Agent Mode (LLM-driven rollout)",
+                            scale=1,
+                        )
+                        model_name_input = gr.Textbox(
+                            value="Qwen/Qwen2.5-7B-Instruct",
+                            label="Model / Adapter",
+                            placeholder="e.g. brodie1of1/war-room-grpo-adapter",
+                            scale=2,
+                        )
+
                 status_text = gr.Textbox(label="Status", interactive=False, max_lines=1)
 
                 # Main 3-column dashboard — everything visible without scrolling
@@ -950,7 +1028,7 @@ Each episode simulates a production incident. Three specialized agents — **Tri
 
                 start_btn.click(
                     start_episode,
-                    inputs=[task_dropdown, seed_input],
+                    inputs=[task_dropdown, seed_input, agent_mode_toggle, model_name_input],
                     outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display],
                 )
                 next_btn.click(
@@ -960,7 +1038,7 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                 )
                 auto_btn.click(
                     auto_play,
-                    inputs=[task_dropdown, seed_input],
+                    inputs=[task_dropdown, seed_input, agent_mode_toggle, model_name_input],
                     outputs=[chat_display, service_display, reward_plot, status_text, milestone_display, comm_flow, comm_timeline, belief_display],
                 )
                 chaos_btn.click(

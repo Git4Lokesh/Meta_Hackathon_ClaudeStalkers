@@ -20,6 +20,12 @@ outputs/war_room_grpo/tokenizer.json
 outputs/war_room_grpo/vocab.json
 outputs/war_room_grpo/merges.txt
 outputs/war_room_grpo/*.safetensors
+# Misc small files that come back with `hf download` but add noise to git
+outputs/war_room_grpo/.gitattributes
+outputs/war_room_grpo/added_tokens.json
+outputs/war_room_grpo/rollout_audit.jsonl
+outputs/war_room_grpo/special_tokens_map.json
+outputs/war_room_grpo/tokenizer_config.json
 # Commit the small, pitch-relevant files:
 !outputs/war_room_grpo/*.png
 !outputs/war_room_grpo/metrics.json
