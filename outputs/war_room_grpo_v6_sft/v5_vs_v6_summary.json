@@ -1,0 +1,74 @@
+{
+  "headline_v6": {
+    "team_reward": 0.28726527777777777,
+    "milestones_achieved": 2.983611111111111,
+    "rounds_used": 15.666944444444445,
+    "format_reward_avg": 0.9999097223083179,
+    "communication_reward_avg": 0.9596111090977987,
+    "anti_hack_triggers": 0,
+    "loss": 0.03493266666666667
+  },
+  "per_task_v5_vs_v6": {
+    "example_custom": {
+      "v5_mean": 0.9459625,
+      "v6_mean": 0.9757,
+      "v5_n": 800,
+      "v6_n": 800
+    },
+    "procedural_easy": {
+      "v5_mean": 0.140025,
+      "v6_mean": 0.1349875,
+      "v5_n": 800,
+      "v6_n": 800
+    },
+    "procedural_hard": {
+      "v5_mean": 0.3502999999999998,
+      "v6_mean": 0.47233749999999985,
+      "v5_n": 800,
+      "v6_n": 800
+    },
+    "task1": {
+      "v5_mean": 0.4597499999999999,
+      "v6_mean": 0.5726,
+      "v5_n": 800,
+      "v6_n": 800
+    },
+    "task2": {
+      "v5_mean": 0.01,
+      "v6_mean": 0.24781250000000002,
+      "v5_n": 800,
+      "v6_n": 800
+    },
+    "task3": {
+      "v5_mean": 0.01,
+      "v6_mean": 0.01,
+      "v5_n": 800,
+      "v6_n": 800
+    },
+    "task4": {
+      "v5_mean": 0.12032500000000002,
+      "v6_mean": 0.10138750000000003,
+      "v5_n": 800,
+      "v6_n": 800
+    },
+    "task5": {
+      "v5_mean": 0.01,
+      "v6_mean": 0.01,
+      "v5_n": 800,
+      "v6_n": 800
+    },
+    "task6": {
+      "v5_mean": 0.01,
+      "v6_mean": 0.06056249999999999,
+      "v5_n": 800,
+      "v6_n": 800
+    }
+  },
+  "v6_trajectory": {
+    "first_half_mean": 0.28725277777777775,
+    "second_half_mean": 0.28727777777777774,
+    "last_quarter_mean": 0.3020833333333333
+  },
+  "n_episodes_v5": 7200,
+  "n_episodes_v6": 7200
+}

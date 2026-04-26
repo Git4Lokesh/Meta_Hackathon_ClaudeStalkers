@@ -37,3 +37,6 @@ outputs/war_room_grpo_multirole_v2/tokenizer.json
 outputs/war_room_grpo_multirole_v2/vocab.json
 outputs/war_room_grpo_multirole_v2/merges.txt
 .venv/
+
+# Internal team-communication scratch files, not for the public repo.
+LAKSHMINATH_MESSAGE.md
