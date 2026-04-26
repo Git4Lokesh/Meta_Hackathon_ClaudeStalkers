@@ -214,7 +214,7 @@ The `hf_job_train_v4.sh` launcher wraps this for Hugging Face Jobs and uploads t
      +----------------------------------------------------------------+
 ```
 
-OpenEnv-compliant FastAPI server exposes `POST /reset`, `POST /step`, `GET /state`, `GET /schema`. Compatible with the standard OpenEnv client and the TRL `rollout_func` pattern.
+OpenEnv-compliant FastAPI server exposes `POST /api/reset`, `POST /api/step`, `GET /api/state`, `GET /api/schema` on the HF Space (the `/api/*` prefix keeps the API routes separate from the Gradio UI at `/`). Compatible with the standard OpenEnv client and the TRL `rollout_func` pattern.
 
 ---
 
