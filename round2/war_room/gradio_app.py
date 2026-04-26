@@ -91,46 +91,15 @@ CUSTOM_CSS = """
     backdrop-filter: blur(6px);
 }
 
-/* Live-replay dashboard grid.
-   Problem we are solving: when the user presses Next, the chat updates
-   at the top but the status cards and plots are below the fold — they
-   have to scroll up and down to see what changed.
-   Solution: a 2-column grid inside the main War Room panel. Chat on the
-   left with its own internal scroll, status + plots stacked on the right.
-   On narrower viewports (< 1100px) the grid collapses to vertical flow. */
-.dashboard-grid {
-    display: grid;
-    grid-template-columns: minmax(420px, 2fr) 3fr;
-    gap: 16px;
-    align-items: stretch;
-}
-@media (max-width: 1100px) {
-    .dashboard-grid { grid-template-columns: 1fr; }
-}
-.dashboard-left, .dashboard-right {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    min-width: 0; /* allow grid children to shrink below content width */
-}
-.dashboard-right-plots {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-}
-@media (max-width: 900px) {
-    .dashboard-right-plots { grid-template-columns: 1fr; }
-}
-/* Cap the status cards row so it doesn't push plots below the fold. */
-.dashboard-status-row {
-    max-height: 260px;
-    overflow-y: auto;
-}
 /* Cap the chat panel so it pairs visually with the status+plots column
-   instead of pushing everything else below the fold. */
+   instead of overflowing its row. The outer layout is now handled by
+   Gradio's native gr.Row / gr.Column flex primitives — we learned the
+   hard way that CSS grid loses to Gradio's theme CSS on specificity.
+   This cap keeps chat readable without forcing page scroll. */
 .chat-container-dashboard {
-    max-height: 520px;
-    overflow-y: auto;
+    max-height: 560px !important;
+    min-height: 420px !important;
+    overflow-y: auto !important;
 }
 
 /* Chat panel */
@@ -1395,42 +1364,53 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                 status_text = gr.Textbox(label="Status", interactive=False, max_lines=1)
 
                 # ---- Main dashboard ----
-                # Live-replay layout: chat on the left, status cards and
-                # plots stacked on the right. Both panels are simultaneously
-                # visible on a 1080p+ viewport so pressing Next updates
-                # chat + status + plots without the user needing to scroll.
-                # Collapses to vertical flow on narrow viewports.
-                with gr.Row(elem_classes=["dashboard-grid"]):
-                    # Left column: live agent chat
-                    with gr.Column(elem_classes=["dashboard-left"]):
+                # Live-replay layout using Gradio's native gr.Row/gr.Column
+                # flex primitives (not CSS grid — we learned the hard way
+                # that Gradio's theme CSS wins the specificity battle
+                # against our own grid declarations).
+                #
+                # Structure:
+                #   gr.Row (horizontal flex — Gradio default)
+                #     ├─ gr.Column(scale=2) — chat panel on the left
+                #     └─ gr.Column(scale=3) — status + plots stacked on the right
+                #         ├─ gr.Row — services / milestones / belief tracker
+                #         └─ gr.Row — comm flow + reward plot
+                #
+                # On 1080p+ viewports everything lives in one horizontal
+                # band. Pressing Next updates chat, status, and plots
+                # simultaneously without the user scrolling. Narrow
+                # viewports (phones / squished windows) let Gradio wrap.
+                with gr.Row(equal_height=False):
+                    # Left column (~40%): live agent chat
+                    with gr.Column(scale=2, min_width=360):
                         gr.Markdown("### Agent chat")
                         chat_display = gr.HTML(
                             label="Agent Chat",
                             elem_classes=["chat-container", "chat-container-dashboard"],
                         )
 
-                    # Right column: status cards on top, plots below
-                    with gr.Column(elem_classes=["dashboard-right"]):
+                    # Right column (~60%): status cards on top, plots below
+                    with gr.Column(scale=3, min_width=420):
                         gr.Markdown("### Incident status")
-                        with gr.Row(elem_classes=["dashboard-status-row"], equal_height=False):
-                            with gr.Column(scale=1, min_width=200):
+                        with gr.Row(equal_height=False):
+                            with gr.Column(scale=1, min_width=180):
                                 gr.Markdown("**Services**")
                                 service_display = gr.HTML()
-                            with gr.Column(scale=1, min_width=200):
+                            with gr.Column(scale=1, min_width=180):
                                 gr.Markdown("**Milestones hit**")
                                 milestone_display = gr.HTML()
-                            with gr.Column(scale=1, min_width=200):
+                            with gr.Column(scale=1, min_width=180):
                                 gr.Markdown("**🧠 Theory of Mind tracker**")
                                 belief_display = gr.HTML()
 
                         gr.Markdown("### Training signal")
-                        with gr.Row(elem_classes=["dashboard-right-plots"], equal_height=False):
+                        with gr.Row(equal_height=False):
                             with gr.Column(scale=1):
                                 comm_flow = gr.Plot(label="Communication flow")
                             with gr.Column(scale=1):
                                 reward_plot = gr.Plot(label="Reward progress")
 
-                # Timeline plot sits below the dashboard grid — wider context
+                # Timeline plot sits below the dashboard row — wider context
                 # after the live-replay viewport is filled.
                 comm_timeline = gr.Plot(label="Communication timeline")
 

@@ -24,7 +24,7 @@ tags:
 
 _**Our trained adapter beats base Qwen 7B by +0.046 composite score (4× lift on the memory-leak task). First adapter in our iteration series to land on the right side of zero.**_
 
-[🌐 Live demo](https://huggingface.co/spaces/brodie1of1/war-room) · [🤗 Trained adapter](https://huggingface.co/brodie1of1/war-room-grpo-adapter-v3) · [📝 Blog post](Blog.md) · [💻 GitHub](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers) · [📓 Colab notebook](round2/war_room/train_colab.ipynb)
+[🌐 Live demo](https://huggingface.co/spaces/brodie1of1/war-room) · [🤗 Trained adapter](https://huggingface.co/brodie1of1/war-room-grpo-adapter-v3) · [📝 Blog post](Blog.md) · [💻 GitHub](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers) · [📓 Open in Colab](https://colab.research.google.com/github/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/round2/war_room/train_colab.ipynb)
 
 Team ClaudeStalkers — Siddharth, Lakshminath, Lokesh — BITS Pilani Hyderabad
 Theme #1: Multi-Agent Interactions
@@ -42,7 +42,7 @@ Theme #1: Multi-Agent Interactions
 | 30 seconds | Read the callout above. That's our hero result. |
 | 2 minutes | Open the [Live demo](https://huggingface.co/spaces/brodie1of1/war-room), reset on Task 3, hit Play. Watch the three agents coordinate (or the base model get fooled by the phantom Redis alert). |
 | 5 minutes | Skim the [Blog post](Blog.md) — engineering-log style, honest about what failed and what worked. |
-| 10 minutes | Run `pytest tests/ -v` (172 tests), `python scripts/oracle_audit.py`, `python round2/war_room/eval_generalization.py`. No GPU required. |
+| 10 minutes | [Open the Colab notebook](https://colab.research.google.com/github/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/round2/war_room/train_colab.ipynb) and run cells 1–4 (oracle audit + gradient check), or locally run `pytest tests/ -v` (172 tests), `python scripts/oracle_audit.py`, `python round2/war_room/eval_generalization.py`. No GPU required for any of these. |
 
 ### Rubric alignment
 
@@ -176,6 +176,16 @@ PYTHONPATH=. python round2/war_room/eval_generalization.py
 
 ## What's actually novel
 
+Judges for this hackathon asked three questions to probe environment innovation. Our answers:
+
+**Does this environment exist to teach an LLM something it currently can't do well?** Yes. Base Qwen 2.5-7B-Instruct gets fooled by the phantom Redis alert on task 3 in 70% of rollouts, restarts healthy services it wasn't supposed to touch, and follows executive panic messages as if they were orders. The environment targets these failure modes directly.
+
+**Is the domain underexplored in RL/LLM training?** Yes. Most multi-agent LLM benchmarks (Chess, Diplomacy, MaCho, GovSim) assume honest agents and complete information. Training a language model to push back on a panicked teammate using quiet evidence — that's the SRE loneliness problem at 3 AM, and we found no comparable open environment for it.
+
+**Could a researcher write a paper about training on this?** We think so. The three building blocks we think are paper-worthy, even if modest at hackathon scale: (a) stale-metric phantom alerts as a trainable deception signal, (b) cross-role pushback as a named, credit-assignable milestone, and (c) a procedural task generator that keeps the environment near the model's capability frontier (RLVE-style curriculum).
+
+### The concrete things we built
+
 **Phantom alerts as a trainable signal.** Stale cached metrics are surfaced on the dashboard with higher prominence than the real issue, and a `BeliefStateTracker` records whether each agent updates their beliefs based on evidence or panicked messaging. Most multi-agent environments don't inject false information on purpose.
 
 **Strict role-based partial observability.** Permissions are enforced at the command parser — remediation literally cannot read a log file, diagnosis literally cannot restart a service. Communication is the only mechanism by which information crosses roles. The channel IS the action space.
@@ -228,7 +238,7 @@ PYTHONPATH=. pytest tests/ -v                                  # 172 tests
 
 ### Train it yourself
 
-The training script is `round2/war_room/train_colab.py` and runs unmodified on Colab (T4 free tier for Qwen 1.5B, paid A100/L40S for Qwen 7B) or on a local GPU. A Colab-runnable notebook is at `round2/war_room/train_colab.ipynb`.
+The training script is `round2/war_room/train_colab.py` and runs unmodified on Colab (T4 free tier for Qwen 1.5B, paid A100/L40S for Qwen 7B) or on a local GPU. The Colab-runnable notebook is **[available here](https://colab.research.google.com/github/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/round2/war_room/train_colab.ipynb)** — click it, run top-to-bottom.
 
 ```bash
 # Smoke run (verifies pipeline, ~2 min on T4):
@@ -342,6 +352,7 @@ Covers: environment reset/step semantics, command parser, simulated system mutat
 - Live Space: https://huggingface.co/spaces/brodie1of1/war-room
 - Trained adapter: https://huggingface.co/brodie1of1/war-room-grpo-adapter-v3
 - Blog post: [Blog.md](Blog.md)
+- Colab notebook: https://colab.research.google.com/github/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/round2/war_room/train_colab.ipynb
 - Source: https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers
 
 MIT license.
