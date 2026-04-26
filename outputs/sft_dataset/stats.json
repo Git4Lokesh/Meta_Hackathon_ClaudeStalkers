@@ -1,0 +1,30 @@
+{
+  "per_task_generated": {
+    "task1": 60,
+    "task2": 60,
+    "task3": 60,
+    "procedural_easy": 60,
+    "procedural_medium": 60,
+    "procedural_hard": 60
+  },
+  "per_task_passed": {
+    "task1": 60,
+    "task2": 60,
+    "task3": 60,
+    "procedural_easy": 60,
+    "procedural_medium": 55,
+    "procedural_hard": 60
+  },
+  "total_generated": 360,
+  "total_kept": 355,
+  "thresholds": {
+    "task1": 0.55,
+    "task2": 0.08,
+    "task3": 0.25,
+    "task4": 0.1,
+    "procedural_easy": 0.45,
+    "procedural_medium": 0.3,
+    "procedural_hard": 0.2,
+    "default": 0.3
+  }
+}
