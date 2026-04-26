@@ -582,7 +582,7 @@ _FOLLOW_UP_CMDS: dict[str, list[str]] = {
     "task4": ["cat /var/log/nginx/error.log", "ps aux"],
 }
 
-MAX_EPISODE_ROUNDS = 16  # cap for speed during training; matches procedural_hard.max_rounds so late milestones (remediation/verification) can fire
+MAX_EPISODE_ROUNDS = 20  # cap for speed during training; matches task5.max_rounds=20 so late milestones (remediation/verification) can fire on hardest tasks; task6.max_rounds=25 will be truncated by 5 (acceptable since most task6 milestones reachable by round 15)
 
 # Per-episode telemetry recorded inside the rollout. The metrics writer at
 # the end of training reads this so format/communication/anti_hack reward

@@ -108,6 +108,20 @@ class BlameGameTask(WarRoomTaskBase):
         return system
 
     def create_grader(self) -> MultiAgentGrader:
+        # Per-grader (per-episode) state. The previous module-level _logs_read
+        # set persisted across episodes during training, causing later episodes
+        # to start with the milestone already satisfied. Bind a fresh set
+        # to each grader instance instead.
+        logs_read: set[str] = set()
+
+        def _diag_reads_multi(actions: MultiAgentAction) -> bool:
+            cmd = actions.diagnosis.command.lower()
+            if any(k in cmd for k in ("cat", "tail", "grep")):
+                for log_type in ("nginx", "app_server", "redis", "syslog", "resolv"):
+                    if log_type in cmd:
+                        logs_read.add(log_type)
+            return len(logs_read) >= 2
+
         milestones = [
             MultiAgentMilestone(
                 name="triage_escalates_multiple_failures",
@@ -119,7 +133,7 @@ class BlameGameTask(WarRoomTaskBase):
                 name="diagnosis_reads_multiple_logs",
                 credit=0.10,
                 description="Diagnosis reads at least 2 different service logs",
-                check=lambda a, s, o, c: _diagnosis_reads_multiple_logs(c, a),
+                check=lambda a, s, o, c: _diag_reads_multi(a),
             ),
             MultiAgentMilestone(
                 name="diagnosis_notices_pattern",
@@ -204,18 +218,6 @@ def _triage_notices_multiple(channel: CommunicationChannel) -> bool:
             if services_mentioned >= 2 or "multiple" in cl or "several" in cl:
                 return True
     return False
-
-
-_logs_read: set = set()  # Track which log files diagnosis has read
-
-
-def _diagnosis_reads_multiple_logs(channel: CommunicationChannel, actions: MultiAgentAction) -> bool:
-    cmd = actions.diagnosis.command.lower()
-    if any(k in cmd for k in ("cat", "tail", "grep")):
-        for log_type in ("nginx", "app_server", "redis", "syslog", "resolv"):
-            if log_type in cmd:
-                _logs_read.add(log_type)
-    return len(_logs_read) >= 2
 
 
 def _diagnosis_notices_dns_pattern(channel: CommunicationChannel) -> bool:
