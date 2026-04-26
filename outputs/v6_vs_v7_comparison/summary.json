@@ -1,57 +1,33 @@
 {
   "v6_summary": {
-    "steps_logged": 45,
-    "epoch_first": 0.82,
-    "epoch_last": 0.84,
+    "steps_logged": 12,
+    "epoch_first": 0.87,
+    "epoch_last": 0.88,
     "milestone_reward_distribution": {
-      "at_floor_le_0p011": 14,
-      "partial_0p011_to_0p95": 26,
-      "near_solve_ge_0p95": 5,
-      "fraction_partial": 0.5777777777777777
+      "at_floor_le_0p011": 2,
+      "partial_0p011_to_0p95": 8,
+      "near_solve_ge_0p95": 2,
+      "fraction_partial": 0.6666666666666666
     },
     "lifetime_means": {
-      "loss": 0.029815555555555553,
-      "grad_norm": 0.5374300287829505,
-      "kl": 0.7453582583202256,
-      "reward": 0.5587000197834439,
-      "rewards/reward_milestone/mean": 0.26894444330698913,
+      "loss": 0.02606666666666667,
+      "grad_norm": 0.5541985193267465,
+      "kl": 0.6520135601361593,
+      "reward": 0.6283750285704931,
+      "rewards/reward_milestone/mean": 0.38687499503915507,
       "rewards/reward_format_lenient/mean": 1.0,
-      "rewards/reward_communication/mean": 0.9822222193082174
+      "rewards/reward_communication/mean": 0.9749999990065893
     },
     "last_20_steps_means": {
-      "loss": 0.030320000000000003,
-      "grad_norm": 0.567994168587029,
-      "kl": 0.7580764066427946,
-      "reward": 0.5637250140309333,
-      "rewards/reward_milestone/mean": 0.27724999813362955
+      "loss": 0.02606666666666667,
+      "grad_norm": 0.5541985193267465,
+      "kl": 0.6520135601361593,
+      "reward": 0.6283750285704931,
+      "rewards/reward_milestone/mean": 0.38687499503915507
     }
   },
   "v7_summary": {
-    "steps_logged": 22,
-    "epoch_first": 0.34,
-    "epoch_last": 0.35,
-    "milestone_reward_distribution": {
-      "at_floor_le_0p011": 1,
-      "partial_0p011_to_0p95": 19,
-      "near_solve_ge_0p95": 2,
-      "fraction_partial": 0.8636363636363636
-    },
-    "lifetime_means": {
-      "loss": 0.03510909090909091,
-      "grad_norm": 1.5570410869338296,
-      "kl": 0.8774206645109437,
-      "reward": 0.6842091313817285,
-      "rewards/reward_milestone/mean": 0.5214090961063366,
-      "rewards/reward_format_lenient/mean": 1.0,
-      "rewards/reward_communication/mean": 0.8090909177606757
-    },
-    "last_20_steps_means": {
-      "loss": 0.035449999999999995,
-      "grad_norm": 1.603086817264557,
-      "kl": 0.8859169706702232,
-      "reward": 0.697975043952465,
-      "rewards/reward_milestone/mean": 0.5453750057145953
-    }
+    "steps_logged": 0
   },
   "v6_job_id": "69ed9454d70108f37acdf848",
   "v7_job_id": "69edb1bdd70108f37acdfbb1",
