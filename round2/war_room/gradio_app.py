@@ -76,6 +76,21 @@ CUSTOM_CSS = """
 .war-room-header h1 { color: #ff4444; margin: 0; font-size: 2em; }
 .war-room-header p { color: #888; margin: 4px 0 0 0; }
 
+/* Sticky control bar — keeps Start / Next / Auto / Chaos buttons
+   visible in the top viewport as the judge scrolls through the live
+   chat, status cards, and plots below. Without this the buttons
+   scroll off-screen after ~1 viewport of content. */
+.sticky-controls {
+    position: sticky !important;
+    top: 0;
+    z-index: 100;
+    background: linear-gradient(180deg, #0a0a1a 0%, rgba(10, 10, 26, 0.95) 80%, rgba(10, 10, 26, 0)) !important;
+    padding: 12px 8px 16px 8px !important;
+    margin: 0 -8px 12px -8px;
+    border-bottom: 1px solid #21262d;
+    backdrop-filter: blur(6px);
+}
+
 /* Chat panel */
 .chat-container {
     background: #0d1117;
@@ -1242,8 +1257,10 @@ Each episode simulates a production incident. Three specialized agents — **Tri
         with gr.Tabs():
             # ---- Tab 1: War Room ----
             with gr.Tab("🔧 War Room"):
-                # Controls row — compact
-                with gr.Row():
+                # Controls row — compact, sticky so Next / Auto / Chaos
+                # remain clickable while the judge scrolls through the
+                # live chat / plots / deep-dive panels below.
+                with gr.Row(elem_classes=["sticky-controls"]):
                     task_dropdown = gr.Dropdown(
                         choices=list(TASK_DESCRIPTIONS.values()),
                         value=TASK_DESCRIPTIONS["task1"],
