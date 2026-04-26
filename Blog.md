@@ -101,6 +101,39 @@ Base Qwen 7B-Instruct versus the v3 adapter, 5 seeds per task, identical role pr
 
 How to read this. Task 1 is saturated — Qwen 7B already knows how to read an nginx error log and suggest a restart, and the heuristic co-agents handle the actual restart. 0.75 is essentially the ceiling for any model given our reward shape. Task 2 is where the training bites. The base model gets distracted by the CPU red herring; the trained model stays focused on the memory leak and names the right service. Task 3 is too hard for 300 gradient updates on a 7B. The phantom pushback behaviour isn't something the model has learned to do consistently — our verifier earlier required the literal substring `"not"` next to `"redis"`, which we've since relaxed to accept paraphrases, but the fundamental issue is that the base model almost never pushes back spontaneously and GRPO needs successful rollouts to learn from.
 
+## The task-complexity ceiling
+
+A good RL environment should reveal where a given model's capability ends, not just whether the agent can improve on a single task. Ours does.
+
+**Task 1 saturates at Qwen 7B.** Base Qwen already knows what a crashed nginx means. No amount of training lifts this meaningfully because there's no error left for the gradient to correct. This is fine — it calibrates the other numbers.
+
+**Task 2 is the sweet spot for 7B.** The base model reliably gets distracted by louder alerts and ends up with 0.048 average. v3 training lifts it to 0.188. v6-SFT lifts training-time task 2 to 0.248 (though eval only shows 0.15 — transfer loss). v7's reward patch pushes training-time to 0.512. This task is at the upper edge of what 7B + 100–300 training episodes can solve, and the trajectory from v3 → v7 shows a model climbing toward ceiling.
+
+**Task 3 is beyond 7B without scaffolding.** The phantom-alert pushback task asks the model to write *"Redis is not the real issue — check the db_connector instead."* Base Qwen emits this phrase in maybe 1 rollout in 100; GRPO needs successful rollouts to reinforce. Until v7's reward fix landed, the task sat flat at the 0.01 reward floor across thousands of episodes. v7's first-ever non-zero task 3 signal at training-time 0.051 is encouraging but nowhere near ceiling. What would fix this:
+
+1. A bigger model (14B+) whose base distribution spontaneously includes more pushback-style phrasing.
+2. Targeted SFT dataset with 500+ task-3 examples, not the 60-ish we generated.
+3. Both.
+
+Put plainly: the environment exposes a capability gradient the model can't shortcut. At 7B, easy coordination is learnable, deception resistance is partially learnable, and pushback is near the ceiling of what RL alone can push through. That's exactly the kind of benchmark this hackathon category asks for.
+
+## The iteration journey
+
+Every adapter we shipped exists because the previous one failed in a specific, informative way. Walking through them in order is the honest record of what it actually takes to train a multi-agent LLM:
+
+| Version | Change | Composite delta | What it taught |
+|---|---|---:|---|
+| v1 | Round-0 diagnosis only, strict format. | **−0.017** | The training rollout only graded one role at round 0; eval ran three roles for all rounds. Train-eval shape mismatch. |
+| v2 | Procedural-only task mix. Same bug. | **−0.001** | More compute doesn't fix an objective mismatch. |
+| **v3** | Multi-role structured completion so train and eval measure the same thing. | **+0.046** | First positive adapter. Task 2 jumped 4×. The environment has a learnable signal. |
+| multirole_v2 | 6-task mix, 800 steps. | **+0.021** | Broader task exposure hurt transfer. v3's procedural-only curriculum generalised better. |
+| v4 | Reward surgery + rank 32 + 9 tasks. | **−0.007** | Training metrics improved but eval regressed. Training curves are necessary, not sufficient. |
+| v5-SFT | SFT warm-up, then GRPO. | **silent bug** | PEFT key-naming mismatch silently dropped all SFT weights. GRPO trained on base model. Fix shipped in commit `55e71c8`. |
+| v6-SFT | v5-SFT with the fix. 9 tasks. | **+0.01** | Training-time task 2 lifted 25× (0.010 → 0.248), but eval transfer weaker than v3. Tasks 3 and 5 stayed at the 0.01 floor — reward math is broken, not format. |
+| v7-rewardfix | 4 constants changed in `grader.py`. | _eval in flight_ | Training-time milestone mean 0.594 vs v6's 0.308 (1.9×). First non-zero task 3 signal (0.051). |
+
+The pattern: the environment produces a learnable signal at a complexity level that matches the model size. Each fix taught us something concrete — train-eval alignment matters more than hyperparameters, task breadth can hurt transfer, SFT lifts format consistency, reward shape determines which tasks even produce a gradient. That's the through-line.
+
 ## What the model actually learned — a worked example
 
 Here's a real rollout on task 2 (memory leak with CPU red herring) at seed 33. Both models are Qwen 2.5-7B-Instruct; the only difference is our LoRA adapter. Both get the same observation: `data_processor` memory is climbing, `api_gateway` CPU is spiking, and monitoring is flagging both.
@@ -226,11 +259,13 @@ PYTHONPATH=. python round2/war_room/train_colab.py \
     --lenient-format --no-unsloth
 ```
 
-Cost was roughly $1.50 on an L40S. A Colab notebook version is at `round2/war_room/train_colab.ipynb`.
+Cost was roughly $1.50 on an L40S. A Colab notebook version is at [this link](https://colab.research.google.com/github/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/round2/war_room/train_colab.ipynb) — click and run.
 
 ## What's next
 
-We're running two more training configurations (`v4` and `v5`) with rank-32 LoRA, lr bumped to 1e-5, and a broader task mix of 6–9 scenarios. If the numbers beat v3's +0.046 meaningfully we'll update this post. If not, v3 is what we ship, and we'll have been honest about the ceiling.
+We've iterated through v4 (reward surgery, negative transfer), v5 (9-task broad mix, task 2/3/5/6 stuck at the reward floor), a short-lived v5-SFT that failed silently because of a PEFT key-naming mismatch (loader fix shipped as commit `55e71c8`), and into v6 and v7 which are training in parallel at the time of this write-up.
+
+v7 carries a small but decisive reward-function patch — four constants in `grader.py` — that unsticks the tasks v5 couldn't learn. The math: on long-horizon tasks (20-25 rounds), the per-round time-pressure penalty plus noop penalty summed to around 0.25, bigger than the 0.05–0.20 of partial milestone credit the model could earn. Raw score went negative, clamped at the 0.01 floor, GRPO saw a flat reward surface. Halving the time-pressure penalty, tightening the penalty cap, and dropping the floor to 0.001 restored the gradient. The live training snapshot (committed to `outputs/v6_vs_v7_comparison/`) shows v7 at epoch 0.35 with milestone mean 0.521 against v6 at epoch 0.88 with milestone mean 0.387 — v7 at a third the training depth is still ahead. If the head-to-head eval transfers the way the training signal does, v7 becomes the hero and this post updates with new numbers. If not, v3 ships and we've been honest about the ceiling.
 
 The thing we most want to explore post-hackathon is ingesting real PagerDuty and Prometheus traces as replay fixtures. The simulation is the version of this problem we could build in 72 hours; the version that actually helps an SRE team lives one dataset away.
 

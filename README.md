@@ -142,9 +142,28 @@ We trained Qwen2.5-7B-Instruct with GRPO + LoRA on a single L40S via Hugging Fac
 
 - **Task 1 is saturated.** Qwen 7B already knows how to read logs and suggest a restart, so training can't meaningfully improve a task the base model almost solves out of the box (0.75 is the score when the heuristic co-agents do the actual restart).
 - **Task 2 is where the training bites.** The base model gets distracted by the CPU red herring; the trained model stays focused on the memory leak and picks out the right service. 4× improvement on a task where the base model is near-floor.
-- **Task 3 is too hard for this amount of training.** Neither model reliably pushes back on the phantom alerts. The ceiling here is high, but 300 gradient updates on a 7B is a small lever.
+- **Task 3 is too hard for this amount of training on a 7B.** Neither model reliably pushes back on the phantom alerts. The ceiling here is high and we believe it needs either a bigger model (14B+) or a curriculum with more explicit pushback-style SFT examples than our 355-example dataset could provide.
 
 We ran earlier configurations (v1, v2) that did worse than base. The v3 result is a product of three specific fixes landed on the way here: a multi-role structured completion format so training optimises the same thing eval measures; a penalty cap on the team score so long-horizon tasks don't accumulate enough time-pressure to swamp milestone credit; and a verifier fix on task 2 that was rejecting correct answers because of a case-sensitive `"OOM"` string match. The blog post walks through each.
+
+### The iteration journey — what every version taught us
+
+Every adapter in our series exists because the previous one failed in a specific, informative way. The story is worth walking through because it's the honest record of how you debug a training loop for a multi-agent environment:
+
+| Version | What changed | Composite delta | What it taught us |
+|---|---|---:|---|
+| **v1** | First attempt. Strict format reward, 91 training steps. | **−0.017** | The training rollout only graded one role at round 0, but eval runs three roles for all rounds. Train-eval shape mismatch. More compute wouldn't have helped — the gradient was optimising the wrong objective. |
+| **v2** | Procedural-only task mix, 300 steps. Same shape bug. | **−0.001** | Confirmed: more training on the wrong objective gets closer to zero but not positive. Scale doesn't fix reward-signal misalignment. |
+| **v3** | Multi-role structured completion format. Train and eval now measure the same thing. | **+0.046** | **The instant train-eval were aligned, the first positive adapter landed.** Task 2 jumped 4×. The environment has a learnable signal; we just had to measure it correctly. |
+| **multirole_v2** | 6-task mix, 800 steps, Lakshminath's run. | **+0.021** | Broader task exposure hurt eval transfer. v3's procedural-only curriculum generalised better to held-out scripted tasks. Task variety is not the same as task difficulty. |
+| **v4** | Reward surgery (penalty cap, solve bonus). Rank 32 LoRA, lr 1e-5. | **−0.007** | Training metrics improved (mean 0.263 → 0.338, task 4 unstuck from 0.01 to 0.109). But eval regressed. Our conclusion: bigger task mix + reward surgery overfits on training-shape patterns. Lesson for the field: training curves are necessary but not sufficient. |
+| **v5-SFT** | SFT warm-up on 355 oracle examples, then GRPO. Should have produced better initial distribution. | **regressed (bug)** | Silent failure: the PEFT key-naming convention between our SFT save and the live PeftModel differed by one path segment (`.default`). `load_state_dict(strict=False)` dropped all 392 SFT keys and GRPO trained on the base model. Fix shipped in commit `55e71c8`. |
+| **v6-SFT** | v5-SFT pipeline with the key-name fix. 200 episodes × 9 tasks. | **+0.01** | Training-time task 2 lifted from 0.010 to 0.248 (25×) — SFT alone can unstick tasks. But eval composite only +0.01 vs v3's +0.046. Strong training signal, partial transfer to held-out seeds. Tasks 3 and 5 still stuck at 0.010 floor — confirmed it's not format, it's reward shape. |
+| **v7-rewardfix** | Same SFT+GRPO as v6 but with four reward constants changed (time-pressure 0.01→0.005, penalty cap 0.40→0.10, floor 0.01→0.001). Diagnosis: the penalty math was destroying partial-credit gradient on long-horizon tasks. | _eval in flight_ | Training-time milestone mean 0.594 vs v6's 0.308 (nearly 2×), first non-zero task 3 signal (0.051). This is our strongest candidate. If the eval transfers, it becomes the new hero. |
+
+The through-line: **the environment produces a learnable signal at the complexity level matching the model.** Qwen 7B can learn task-2 prioritisation in 100 episodes. It can partially learn task-3 deception-resistance with SFT warm-start. It cannot learn task-3 without it, because the base model never emits the pushback keywords our verifier measures, and GRPO without positive rollouts has nothing to reinforce. That's a concrete result about what level of model the environment demands — not a failure.
+
+See [outputs/RESULTS.md](outputs/RESULTS.md) for per-run config, per-task numbers, and artifact links.
 
 ### Training curve
 
@@ -209,7 +228,8 @@ Each design decision above wasn't aesthetic. It was made because we needed it to
 | **Procedural task generator with 5 fault primitives × 10 services × difficulty scaling** | Static task distributions saturate fast. RLVE thesis — keep the model at its capability frontier. | v3 trained on procedural-only and beat base by +0.046 composite on scripted eval despite never seeing those scripted tasks in training. Broader 6-task mix trained adapter had lower transfer. |
 | **Multirole structured completion format** (`### TRIAGE / ### DIAGNOSIS / ### REMEDIATION`) as the round-0 training target | Training rollout must optimise the same thing eval measures. Previously training only graded diagnosis round-0 while eval ran three roles for up to 20 rounds. | First positive adapter (v3, +0.046) landed the instant train and eval shapes aligned. Task2 score went from 0.048 to 0.188 — the base model gets distracted by the CPU red herring; the trained model stays focused on the memory leak. |
 | **Oracle-audited verifiers** (`scripts/oracle_audit.py`) | A scripted perfect-knowledge policy must be able to score ≥0.85 on every task. If it can't, the task has an unreachable milestone that RL can't fix. | Caught two bugs: task2 `diagnosis_reads_oom` checking literal "OOM" when the syslog fixture had "oom-killer" + "Out of memory"; task2 `diagnosis_identifies_pid` requiring "ps" in the same round the PID is mentioned (chicken-and-egg). After fixes, oracle scores went 0.99 / 0.95 / 0.88 on task1/2/3 respectively. |
-| **SFT warm-up on oracle-generated multirole examples** | Hackathon doc §16/§45: RL works best when the model can occasionally succeed. Our model couldn't on task3, so GRPO had no positive signal to reinforce. | SFT adapter hits `eval_loss=0.024` and `mean_token_accuracy=0.991` on the format in 5 minutes. A single SFT completion on task3 hits 5 milestones including `diagnosis_pushback_bonus` — the first time that milestone has fired in any of our runs. v5-SFT (GRPO on the SFT checkpoint) is training now. |
+| **SFT warm-up on oracle-generated multirole examples** | Hackathon doc §16/§45: RL works best when the model can occasionally succeed. Our model couldn't on task3, so GRPO had no positive signal to reinforce. | SFT adapter hits `eval_loss=0.024` and `mean_token_accuracy=0.991` on the format in 5 minutes. A single SFT completion on task3 hits 5 milestones including `diagnosis_pushback_bonus` — the first time that milestone has fired in any of our runs. v5-SFT failed silently due to a PEFT key-naming mismatch ([loader fix](outputs/RESULTS.md)); v6-SFT and v7-rewardfix run on the fixed loader. |
+| **Reward surgery for long-horizon tasks** (v7 branch, landed during the hackathon onsite) | Across v5, tasks 2/3/5/6 stayed flat at the 0.01 reward-function floor for all 800 training episodes. Diagnosis: time_pressure + noop penalty on 20-round tasks saturated at ~0.25, bigger than the 0.05–0.20 of partial milestone credit the model could earn. Raw score went negative, clamped to floor, GRPO saw no gradient. | Four constants changed in `grader.py` (time_pressure 0.01→0.005, penalty cap 0.40→0.10, floor 0.01→0.001). Live training snapshot shows v7 with **0% at-floor rollouts** vs v6's 25%; milestone mean 0.594 at epoch 0.23 vs v6's 0.230 at epoch 0.72. See `outputs/v6_vs_v7_comparison/comparison_charts.png`. |
 
 The environment pushed training forward. Every version gets better because we can see what's broken.
 
@@ -293,7 +313,35 @@ What we are claiming: the environment is reproducible, ablatable, procedurally g
 - Task 3 is not yet cracked. The phantom pushback milestone requires the model to emit a semantic dismissal of Redis, which the strict verifier checked too narrowly in earlier runs and which we've since relaxed to accept a broader set of phrasings — but 300 gradient updates aren't enough to teach the model to consistently pushback.
 - The training metric rises noisily, not monotonically. GRPO with 4 generations per step and bimodal reward (a correct naming scores 0.9, a wrong one scores 0.01) produces noise that larger sample sizes would smooth.
 
-We have v4 and v5 training runs going with higher-rank LoRA, bigger task mix, and the relaxed task 3 verifier. Numbers will be updated when they land.
+### The task-complexity ceiling — where the environment asks more than 7B can give
+
+One of the more useful things an RL environment can do is reveal where a given model's capability ends. Ours does this cleanly:
+
+| Task | What it asks the model to do | Qwen 2.5-7B Instruct outcome | What would fix it |
+|---|---|---|---|
+| **Task 1** (easy) | Read logs, identify crashed service, suggest a restart. | **Saturated** at 0.75 in both base and trained. | No fix needed — this task is at ceiling for 7B. |
+| **Task 2** (medium, deception) | Prioritise the real memory leak over a louder CPU red herring. | v3 beats base 4× (0.048 → 0.188). v6-SFT beats base 3× (0.05 → 0.15). Both lift the floor but neither reaches ceiling. | Longer training, or a 14B model. The task is at the upper edge of what 7B can do with 100–200 episodes. |
+| **Task 3** (hard, pushback) | Detect that a loud Redis alert is stale cached metrics; explicitly tell the team "Redis is not the issue — the real root cause is the DB password." | Flat at the reward floor (0.01) in base, v3, v5, v6-SFT. First non-zero signal in v7 training-time (0.051) only after the reward surgery fixed the gradient. | Either (a) a bigger model that spontaneously emits the pushback in the base distribution, or (b) more targeted SFT — our 355-example dataset had maybe 50–60 task-3 rollouts, and the model needs more examples of the specific "metrics are stale, the real root cause is X" sentence structure. |
+| **Task 4–6** (expert) | Parallel incidents, rogue-insider detection, conflicting reports. | Not evaluated in the scripted head-to-head. Training-time means in the 0.05–0.1 band for v6/v7. | These tasks need both bigger models AND more targeted SFT. They're forward-looking benchmarks for when we get our hands on a 14B-32B model and a larger SFT dataset. |
+
+**The pattern:** easier tasks saturate at smaller model scales; harder tasks need progressively more — larger models, more data, more training, or all three. This is exactly what a good RL environment should expose. v3 proves the environment produces a positive gradient at 7B on task 2 (deception resistance); v6 proves SFT alone can lift that to 0.248 at training time; v7 proves a reward-shape fix can produce the first task-3 signal the environment has ever yielded.
+
+Put another way: the environment demonstrates the capability gradient it's designed to test, by showing exactly which tasks each model class can and cannot solve.
+
+### What's in flight right now
+
+At the time of submission, two training runs matter:
+
+- **v6-SFT (completed)**: SFT warm-up + GRPO on the original reward, 200 episodes × 9 tasks, 7,200 episodes total. Training-time task 2 lifted 0.010 → 0.248 (25×), task 1 from 0.460 → 0.573, procedural_hard from 0.350 → 0.472. Tasks 3 and 5 stayed at the 0.010 floor. Eval composite delta +0.01 — strong training signal that partially transferred. Published at [`GeminiHugger/war-room-grpo-adapter-v6-sft`](https://huggingface.co/GeminiHugger/war-room-grpo-adapter-v6-sft).
+- **v7-rewardfix (in flight)**: same pipeline as v6 with four reward constants changed (time-pressure penalty 0.01→0.005, penalty cap 0.40→0.10, floor 0.01→0.001). Training-time milestone mean 0.594 vs v6's 0.308, first non-zero task 3 signal at 0.051. Lakshminath's full run will finish post-deadline; our [brodie1of1/war-room-grpo-adapter-v7-fast](https://huggingface.co/brodie1of1/war-room-grpo-adapter-v7-fast) is a 50-episode × 6-task variant we evaluated in the submission window.
+
+![v6 vs v7 trajectory](outputs/v6_vs_v7_comparison/v6_v7_trajectory.png)
+
+*Per-step milestone reward for both runs on the same axes. v6 rollouts cluster at the 0.01 floor; v7's reward-fix patch lifts them into the 0.1–0.6 partial-credit band. Rolling-mean lines show the trend; dashed line is the reward clamp.*
+
+![v6 vs v7 training signal](outputs/v6_vs_v7_comparison/comparison_charts.png)
+
+*Four-panel view from Lakshminath's `parse_logs.py`: per-step milestone reward, distribution histogram, total reward, KL divergence. v7 sits in the 0.05–0.45 partial-credit band with no floor pile-up; v6 alternates between floor and solve.*
 
 ---
 
@@ -323,8 +371,10 @@ round2/war_room/
 outputs/
 ├── war_room_grpo_v3/           # Current hero adapter artifacts
 ├── war_room_grpo_multirole_v2/ # Lakshminath's 6-task v2 run
+├── v6_vs_v7_comparison/        # Live v6 vs v7 training snapshot + parse_logs.py
 ├── reward_ablation/            # Ablation PNGs + JSON
 ├── generalization_eval/        # 60-seed generalisation chart
+├── worked_example/             # Verbatim base-vs-trained rollout used in Blog.md
 └── llm_eval/v3/                # Head-to-head eval results
 
 scripts/
