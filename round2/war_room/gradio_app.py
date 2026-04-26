@@ -82,9 +82,10 @@ CUSTOM_CSS = """
     border: 1px solid #21262d;
     border-radius: 12px;
     padding: 16px;
-    max-height: 450px;
+    max-height: 360px;
     overflow-y: auto;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin-bottom: 12px;
 }
 
 /* Agent message */
@@ -193,6 +194,17 @@ CUSTOM_CSS = """
     background: #0d2818;
     color: #3fb950;
     font-size: 0.85em;
+    word-wrap: break-word;
+}
+
+/* Force HTML / Markdown containers to fit their column so long content
+   (e.g. belief tracker snapshots, reward inspector tables) doesn't
+   spill over into the next column. */
+.gradio-container .html-container,
+.gradio-container .markdown-container {
+    max-width: 100%;
+    overflow-x: auto;
+    word-wrap: break-word;
 }
 
 /* Episode header */
@@ -1323,31 +1335,49 @@ Each episode simulates a production incident. Three specialized agents — **Tri
 
                 status_text = gr.Textbox(label="Status", interactive=False, max_lines=1)
 
-                # Main 3-column dashboard — everything visible without scrolling
-                with gr.Row(equal_height=True):
-                    # LEFT: Agent Chat (scrollable)
-                    with gr.Column(scale=2, min_width=250):
-                        chat_display = gr.HTML(label="Agent Chat", elem_classes=["chat-container"])
+                # ---- Main dashboard ----
+                # Clean vertical flow: chat at top, status cards in a row,
+                # plots in a row, deep-dive views hidden in an accordion.
+                # This prevents the old 4-column-stacked-widget overlap.
 
-                    # CENTER 1: Belief Tracker (Theory of Mind)
-                    with gr.Column(scale=1, min_width=200):
-                        gr.Markdown("### 🧠 Theory of Mind Tracker")
+                # Row 1: Live agent chat (full width, its own scroll container)
+                chat_display = gr.HTML(
+                    label="Agent Chat",
+                    elem_classes=["chat-container"],
+                )
+
+                # Row 2: Status cards — services, milestones, belief tracker
+                gr.Markdown("### Incident status")
+                with gr.Row(equal_height=False):
+                    with gr.Column(scale=1, min_width=240):
+                        gr.Markdown("**Services**")
+                        service_display = gr.HTML()
+                    with gr.Column(scale=1, min_width=240):
+                        gr.Markdown("**Milestones hit**")
+                        milestone_display = gr.HTML()
+                    with gr.Column(scale=1, min_width=240):
+                        gr.Markdown("**🧠 Theory of Mind tracker**")
                         belief_display = gr.HTML()
-                        gr.Markdown("### 💭 Agent Brain Scanner")
-                        thought_display = gr.HTML(elem_classes=["chat-container"])
-                        reward_inspector = gr.HTML()
-                        playback_trace = gr.HTML()
 
-                    # CENTER 2: Graphs (comm flow + reward)
-                    with gr.Column(scale=2, min_width=250):
-                        comm_flow = gr.Plot(label="Communication Flow")
-                        reward_plot = gr.Plot(label="Reward Progress")
+                # Row 3: Plots — communication flow + reward progress
+                gr.Markdown("### Training signal")
+                with gr.Row(equal_height=False):
+                    with gr.Column(scale=1):
+                        comm_flow = gr.Plot(label="Communication flow")
+                    with gr.Column(scale=1):
+                        reward_plot = gr.Plot(label="Reward progress")
 
-                    # RIGHT: Status panels (services + milestones + timeline)
-                    with gr.Column(scale=1, min_width=200):
-                        service_display = gr.HTML(label="Services")
-                        milestone_display = gr.HTML(label="Milestones")
-                        comm_timeline = gr.Plot(label="Timeline")
+                # Row 4: Timeline (wide, single plot)
+                comm_timeline = gr.Plot(label="Communication timeline")
+
+                # Deep-dive: brain scanner, reward inspector, playback (hidden by default)
+                with gr.Accordion("🔍 Deep-dive: brain scanner, reward inspector, playback", open=False):
+                    gr.Markdown("#### 💭 Agent Brain Scanner")
+                    thought_display = gr.HTML(elem_classes=["chat-container"])
+                    gr.Markdown("#### Reward inspector")
+                    reward_inspector = gr.HTML()
+                    gr.Markdown("#### Playback trace")
+                    playback_trace = gr.HTML()
 
                 start_btn.click(
                     start_episode,
