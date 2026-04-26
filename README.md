@@ -159,7 +159,7 @@ Every adapter in our series exists because the previous one failed in a specific
 | **v4** | Reward surgery (penalty cap, solve bonus). Rank 32 LoRA, lr 1e-5. | **−0.007** | Training metrics improved (mean 0.263 → 0.338, task 4 unstuck from 0.01 to 0.109). But eval regressed. Our conclusion: bigger task mix + reward surgery overfits on training-shape patterns. Lesson for the field: training curves are necessary but not sufficient. |
 | **v5-SFT** | SFT warm-up on 355 oracle examples, then GRPO. Should have produced better initial distribution. | **regressed (bug)** | Silent failure: the PEFT key-naming convention between our SFT save and the live PeftModel differed by one path segment (`.default`). `load_state_dict(strict=False)` dropped all 392 SFT keys and GRPO trained on the base model. Fix shipped in commit `55e71c8`. |
 | **v6-SFT** | v5-SFT pipeline with the key-name fix. 200 episodes × 9 tasks. | **+0.01** | Training-time task 2 lifted from 0.010 to 0.248 (25×) — SFT alone can unstick tasks. But eval composite only +0.01 vs v3's +0.046. Strong training signal, partial transfer to held-out seeds. Tasks 3 and 5 still stuck at 0.010 floor — confirmed it's not format, it's reward shape. |
-| **v7-rewardfix** | Same SFT+GRPO as v6 but with four reward constants changed (time-pressure 0.01→0.005, penalty cap 0.40→0.10, floor 0.01→0.001). Diagnosis: the penalty math was destroying partial-credit gradient on long-horizon tasks. | _eval in flight_ | Training-time milestone mean 0.594 vs v6's 0.308 (nearly 2×), first non-zero task 3 signal (0.051). This is our strongest candidate. If the eval transfers, it becomes the new hero. |
+| **v7-rewardfix** | Same SFT+GRPO as v6 but with four reward constants changed (time-pressure 0.01→0.005, penalty cap 0.40→0.10, floor 0.01→0.001). Diagnosis: the penalty math was destroying partial-credit gradient on long-horizon tasks. | **−0.033** | Training-time became our strongest signal yet — mean 0.594 vs v6's 0.308, task 1 0.807, task 2 0.512, first non-zero task 3 (0.051). But our fast 50-episode × 6-task variant regressed on eval transfer: task 1 dropped from 0.748 (v3) to 0.58, composite delta -0.033. The reward-fix works at training time; at eval the aggressive partial-credit seeking hurt performance on easy tasks. Same pattern as v4 — training signal doesn't guarantee transfer. |
 
 The through-line: **the environment produces a learnable signal at the complexity level matching the model.** Qwen 7B can learn task-2 prioritisation in 100 episodes. It can partially learn task-3 deception-resistance with SFT warm-start. It cannot learn task-3 without it, because the base model never emits the pushback keywords our verifier measures, and GRPO without positive rollouts has nothing to reinforce. That's a concrete result about what level of model the environment demands — not a failure.
 
@@ -328,16 +328,19 @@ One of the more useful things an RL environment can do is reveal where a given m
 
 Put another way: the environment demonstrates the capability gradient it's designed to test, by showing exactly which tasks each model class can and cannot solve.
 
-### What's in flight right now
+### What we landed at the end
 
-At the time of submission, two training runs matter:
+All three post-v3 adapters have now been evaluated head-to-head. **v3 remains the documented hero** — and the full picture is instructive:
 
-- **v6-SFT (completed)**: SFT warm-up + GRPO on the original reward, 200 episodes × 9 tasks, 7,200 episodes total. Training-time task 2 lifted 0.010 → 0.248 (25×), task 1 from 0.460 → 0.573, procedural_hard from 0.350 → 0.472. Tasks 3 and 5 stayed at the 0.010 floor. Eval composite delta +0.01 — strong training signal that partially transferred. Published at [`GeminiHugger/war-room-grpo-adapter-v6-sft`](https://huggingface.co/GeminiHugger/war-room-grpo-adapter-v6-sft).
-- **v7-rewardfix (in flight)**: same pipeline as v6 with four reward constants changed (time-pressure penalty 0.01→0.005, penalty cap 0.40→0.10, floor 0.01→0.001). Training-time milestone mean 0.594 vs v6's 0.308, first non-zero task 3 signal at 0.051. Lakshminath's full run will finish post-deadline; our [brodie1of1/war-room-grpo-adapter-v7-fast](https://huggingface.co/brodie1of1/war-room-grpo-adapter-v7-fast) is a 50-episode × 6-task variant we evaluated in the submission window.
+- **v6-SFT (completed, evaluated)**: SFT warm-up + GRPO on the original reward, 200 episodes × 9 tasks, 7,200 episodes total. Training-time task 2 lifted 0.010 → 0.248 (25×), task 1 from 0.460 → 0.573, procedural_hard from 0.350 → 0.472. Tasks 3 and 5 stayed at the 0.010 floor. **Eval composite delta +0.01** — strong training signal that only partially transferred. Published at [`GeminiHugger/war-room-grpo-adapter-v6-sft`](https://huggingface.co/GeminiHugger/war-room-grpo-adapter-v6-sft).
+- **v7-fast (completed, evaluated)**: same pipeline as v6 with four reward constants changed (time-pressure penalty 0.01→0.005, penalty cap 0.40→0.10, floor 0.01→0.001) plus a focused 6-task mix. Training-time strongest of any run — mean 0.563, task 2 0.512, first non-zero task 3 (0.051). **Eval composite delta −0.033** — the reward-fix worked at training time but the more aggressive partial-credit seeking cost us task 1 transfer (0.748 → 0.58). Published at [`brodie1of1/war-room-grpo-adapter-v7-fast`](https://huggingface.co/brodie1of1/war-room-grpo-adapter-v7-fast).
+- **v7-rewardfix (Lakshminath's full 200-ep × 9-task run)**: still training at submission, will finish post-deadline. Eval queued for post-submission analysis.
+
+The consistent pattern across v4, v6, and v7-fast: **training-time improvements on the environment don't automatically transfer to eval**. Shorter training on procedural-only tasks (v3) generalises better than longer training on broader mixes with aggressive reward shaping. That's an important finding about the environment — it has a distinct "training-signal peak" separate from its "generalisation peak," and they don't coincide for small models.
 
 ![v6 vs v7 trajectory](outputs/v6_vs_v7_comparison/v6_v7_trajectory.png)
 
-*Per-step milestone reward for both runs on the same axes. v6 rollouts cluster at the 0.01 floor; v7's reward-fix patch lifts them into the 0.1–0.6 partial-credit band. Rolling-mean lines show the trend; dashed line is the reward clamp.*
+*Per-step milestone reward for v6 and v7 during training. v6 rollouts cluster at the 0.01 floor; v7's reward-fix patch lifts them into the 0.1–0.6 partial-credit band. Strong training signal — but at 7B it didn't translate into better transfer on scripted eval.*
 
 ![v6 vs v7 training signal](outputs/v6_vs_v7_comparison/comparison_charts.png)
 

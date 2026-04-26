@@ -130,7 +130,7 @@ Every adapter we shipped exists because the previous one failed in a specific, i
 | v4 | Reward surgery + rank 32 + 9 tasks. | **−0.007** | Training metrics improved but eval regressed. Training curves are necessary, not sufficient. |
 | v5-SFT | SFT warm-up, then GRPO. | **silent bug** | PEFT key-naming mismatch silently dropped all SFT weights. GRPO trained on base model. Fix shipped in commit `55e71c8`. |
 | v6-SFT | v5-SFT with the fix. 9 tasks. | **+0.01** | Training-time task 2 lifted 25× (0.010 → 0.248), but eval transfer weaker than v3. Tasks 3 and 5 stayed at the 0.01 floor — reward math is broken, not format. |
-| v7-rewardfix | 4 constants changed in `grader.py`. | _eval in flight_ | Training-time milestone mean 0.594 vs v6's 0.308 (1.9×). First non-zero task 3 signal (0.051). |
+| v7-rewardfix | 4 constants changed in `grader.py`. | **−0.033 (fast variant)** | Training-time strongest of any run (mean 0.594, task 2 0.512, first non-zero task 3 signal 0.051). But eval regressed: task 1 dropped from 0.748 to 0.58 as the more aggressive reward shaping hurt the easy-task transfer. Same pattern as v4 — training signal doesn't guarantee eval transfer. |
 
 The pattern: the environment produces a learnable signal at a complexity level that matches the model size. Each fix taught us something concrete — train-eval alignment matters more than hyperparameters, task breadth can hurt transfer, SFT lifts format consistency, reward shape determines which tasks even produce a gradient. That's the through-line.
 
@@ -261,13 +261,17 @@ PYTHONPATH=. python round2/war_room/train_colab.py \
 
 Cost was roughly $1.50 on an L40S. A Colab notebook version is at [this link](https://colab.research.google.com/github/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/round2/war_room/train_colab.ipynb) — click and run.
 
-## What's next
+## What we landed at the end
 
-We've iterated through v4 (reward surgery, negative transfer), v5 (9-task broad mix, task 2/3/5/6 stuck at the reward floor), a short-lived v5-SFT that failed silently because of a PEFT key-naming mismatch (loader fix shipped as commit `55e71c8`), and into v6 and v7 which are training in parallel at the time of this write-up.
+We iterated through v4 (reward surgery, negative transfer), v5 (9-task broad mix, task 2/3/5/6 stuck at the reward floor), a short-lived v5-SFT that failed silently because of a PEFT key-naming mismatch (loader fix shipped as commit `55e71c8`), into v6-SFT and v7-rewardfix. By the time the submission window closed, we'd evaluated both v6-SFT and our fast v7 variant head-to-head against base Qwen 7B.
 
-v7 carries a small but decisive reward-function patch — four constants in `grader.py` — that unsticks the tasks v5 couldn't learn. The math: on long-horizon tasks (20-25 rounds), the per-round time-pressure penalty plus noop penalty summed to around 0.25, bigger than the 0.05–0.20 of partial milestone credit the model could earn. Raw score went negative, clamped at the 0.01 floor, GRPO saw a flat reward surface. Halving the time-pressure penalty, tightening the penalty cap, and dropping the floor to 0.001 restored the gradient. The live training snapshot (committed to `outputs/v6_vs_v7_comparison/`) shows v7 at epoch 0.35 with milestone mean 0.521 against v6 at epoch 0.88 with milestone mean 0.387 — v7 at a third the training depth is still ahead. If the head-to-head eval transfers the way the training signal does, v7 becomes the hero and this post updates with new numbers. If not, v3 ships and we've been honest about the ceiling.
+v7 carries a small but decisive reward-function patch — four constants in `grader.py`. The math: on long-horizon tasks (20-25 rounds), the per-round time-pressure penalty plus noop penalty summed to around 0.25, bigger than the 0.05–0.20 of partial milestone credit the model could earn. Raw score went negative, clamped at the 0.01 floor, GRPO saw a flat reward surface. Halving the time-pressure penalty, tightening the penalty cap, and dropping the floor to 0.001 restored the gradient — and the training-time numbers responded accordingly. v7-fast hit overall mean 0.563 across 300 training episodes, with **the first non-zero task 3 signal (0.051)** we've ever seen. Task 2 climbed from 0.010 in v5 to 0.512 training-time. Task 1 from 0.46 to 0.807.
 
-The thing we most want to explore post-hackathon is ingesting real PagerDuty and Prometheus traces as replay fixtures. The simulation is the version of this problem we could build in 72 hours; the version that actually helps an SRE team lives one dataset away.
+And yet on eval, v6-SFT's composite delta was +0.01 and v7-fast's was -0.033 — both worse than v3's +0.046. The pattern: aggressive reward shaping plus broader task mix lifts training signal sharply but costs us task 1 transfer (v3 held task 1 at 0.748, v7-fast dropped it to 0.58). The same thing happened with v4. The environment has a distinct "training-signal peak" separate from a "generalisation peak" and, at 7B parameters, they don't coincide. **v3 is the documented hero** because its procedural-only training curriculum produced the best generalisation to held-out scripted tasks.
+
+One sub-finding from v7 we'll be chewing on: trained task 3 rollouts averaged 4-9 pushback messages per episode where base averaged 0. The model has learned to push back on phantom alerts. It just hasn't learned the specific phrasing — "Redis is not the issue — the real root cause is X" — that our strict verifier accepts. Our 355-example SFT dataset had maybe 60 task-3 rollouts; the model needs many more examples of that sentence structure to consistently produce it. That's actionable for the next iteration.
+
+The thing we most want to explore post-hackathon is ingesting real PagerDuty and Prometheus traces as replay fixtures, plus a targeted SFT dataset of 500+ task-3 pushback examples. The simulation is the version of this problem we could build in 72 hours; the version that actually helps an SRE team lives one dataset away.
 
 Thanks to the OpenEnv team at Meta and Hugging Face for the framework and the compute.
 
