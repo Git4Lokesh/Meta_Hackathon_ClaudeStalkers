@@ -51,7 +51,7 @@ Theme #1: Multi-Agent Interactions
 | **Environment Innovation** | 40% | [What's actually novel](#whats-actually-novel) — phantom alerts, role-based partial observability, procedural task generator, composable reward primitives. |
 | **Storytelling** | 30% | [Live demo](https://huggingface.co/spaces/brodie1of1/war-room) with belief-state tracker + executive-panic injection, plus [Blog post](Blog.md) that walks through what broke and what fixed it. |
 | **Improvement** | 20% | Head-to-head chart above + [60-seed generalisation study](outputs/generalization_eval/generalization_score.png) + [reward ablation](outputs/reward_ablation/ablation_overall.png) + [full run log](outputs/RESULTS.md) with v1→v6-SFT history. |
-| **Reward & Pipeline** | 10% | Four decomposed reward functions with ablation evidence, anti-hack multiplicative gate, oracle-audited verifiers, SFT warm-up + GRPO training pipeline. |
+| **Reward & Pipeline** | 10% | Four decomposed reward functions with ablation evidence, anti-hack multiplicative gate, oracle-audited verifiers, SFT warm-up + GRPO training pipeline. Per-run experimental tracking committed to `outputs/<run>/metrics.json` + `rollout_audit.jsonl` + `training_curves.png` (no dependency on external tracking services). |
 
 ---
 
