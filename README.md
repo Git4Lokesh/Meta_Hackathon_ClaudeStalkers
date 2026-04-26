@@ -24,6 +24,8 @@ tags:
 
 _**Our trained adapter beats base Qwen 7B by +0.046 composite score (4× lift on the memory-leak task). First adapter in our iteration series to land on the right side of zero.**_
 
+📺 **[Watch the 2-minute walkthrough on YouTube](https://youtu.be/B2tvMdbr7AE)** *(we recommend 1.25× or 1.5× playback speed)*
+
 [🌐 Live demo](https://huggingface.co/spaces/brodie1of1/war-room) · [🤗 Trained adapter](https://huggingface.co/brodie1of1/war-room-grpo-adapter-v3) · [📝 Blog post](Blog.md) · [💻 GitHub](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers) · [📓 Open in Colab](https://colab.research.google.com/github/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/round2/war_room/train_colab.ipynb)
 
 Team ClaudeStalkers — Siddharth, Lakshminath, Lokesh — BITS Pilani Hyderabad
@@ -39,9 +41,9 @@ Theme #1: Multi-Agent Interactions
 
 | If you have… | Do this |
 |---|---|
+| 2 minutes | Watch the **[YouTube walkthrough](https://youtu.be/B2tvMdbr7AE)** (2-min narrated demo — 1.25-1.5× speed recommended). |
 | 30 seconds | Read the callout above. That's our hero result. |
-| 2 minutes | Open the [Live demo](https://huggingface.co/spaces/brodie1of1/war-room), reset on Task 3, hit Play. Watch the three agents coordinate (or the base model get fooled by the phantom Redis alert). |
-| 5 minutes | Skim the [Blog post](Blog.md) — engineering-log style, honest about what failed and what worked. |
+| 5 minutes | Open the [Live demo](https://huggingface.co/spaces/brodie1of1/war-room), reset on Task 3, hit Play. Watch the three agents coordinate (or the base model get fooled by the phantom Redis alert). Or skim the [Blog post](Blog.md) — engineering-log style, honest about what failed and what worked. |
 | 10 minutes | [Open the Colab notebook](https://colab.research.google.com/github/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/round2/war_room/train_colab.ipynb) and run cells 1–4 (oracle audit + gradient check), or locally run `pytest tests/ -v` (172 tests), `python scripts/oracle_audit.py`, `python round2/war_room/eval_generalization.py`. No GPU required for any of these. |
 
 ### Rubric alignment
@@ -49,7 +51,7 @@ Theme #1: Multi-Agent Interactions
 | Criterion | Weight | Where to look |
 |---|---:|---|
 | **Environment Innovation** | 40% | [What's actually novel](#whats-actually-novel) — phantom alerts, role-based partial observability, procedural task generator, composable reward primitives. |
-| **Storytelling** | 30% | [Live demo](https://huggingface.co/spaces/brodie1of1/war-room) with belief-state tracker + executive-panic injection, plus [Blog post](Blog.md) that walks through what broke and what fixed it. |
+| **Storytelling** | 30% | **[YouTube walkthrough (2 min)](https://youtu.be/B2tvMdbr7AE)** · [Live demo](https://huggingface.co/spaces/brodie1of1/war-room) with belief-state tracker + executive-panic injection, plus [Blog post](Blog.md) that walks through what broke and what fixed it. |
 | **Improvement** | 20% | Head-to-head chart above + [60-seed generalisation study](outputs/generalization_eval/generalization_score.png) + [reward ablation](outputs/reward_ablation/ablation_overall.png) + [full run log](outputs/RESULTS.md) with v1→v6-SFT history. |
 | **Reward & Pipeline** | 10% | Four decomposed reward functions with ablation evidence, anti-hack multiplicative gate, oracle-audited verifiers, SFT warm-up + GRPO training pipeline. Per-run experimental tracking committed to `outputs/<run>/metrics.json` + `rollout_audit.jsonl` + `training_curves.png` (no dependency on external tracking services). |
 
@@ -403,6 +405,7 @@ Covers: environment reset/step semantics, command parser, simulated system mutat
 ## Resources
 
 - Live Space: https://huggingface.co/spaces/brodie1of1/war-room
+- **YouTube walkthrough (2 min): https://youtu.be/B2tvMdbr7AE** *(1.25-1.5× speed recommended)*
 - Trained adapter: https://huggingface.co/brodie1of1/war-room-grpo-adapter-v3
 - Blog post: [Blog.md](Blog.md)
 - Colab notebook: https://colab.research.google.com/github/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/round2/war_room/train_colab.ipynb

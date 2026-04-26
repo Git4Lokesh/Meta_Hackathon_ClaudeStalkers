@@ -4,6 +4,8 @@
 
 Team ClaudeStalkers (Siddharth, Lakshminath, Lokesh), BITS Pilani Hyderabad.
 
+📺 **[Watch the 2-minute walkthrough on YouTube](https://youtu.be/B2tvMdbr7AE)** (1.25-1.5× speed recommended) · 🌐 **[Live demo on HF Space](https://huggingface.co/spaces/brodie1of1/war-room)**
+
 > **Note on length.** This blog runs ~2.8k words because it embeds verbatim base-vs-trained rollout excerpts in the "What the model actually learned" section. The raw trace is the point of the blog — paraphrasing would lose the story. If you only have two minutes, read the **30-second teaser** below, then jump to [that section](#what-the-model-actually-learned--a-worked-example).
 
 ---
