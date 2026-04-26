@@ -180,6 +180,25 @@ PYTHONPATH=. python round2/war_room/eval_generalization.py
 
 ---
 
+## Environment design → measurable agent improvement
+
+Each design decision above wasn't aesthetic. It was made because we needed it to produce a trainable signal, and we can point at where that signal landed.
+
+| Design decision | Why it's there | What it produced in training |
+|---|---|---|
+| **Four decomposed reward functions** (milestone / format / communication / anti-hack) instead of a single scalar | Single rewards are easier to game. We can ablate each component on fixed seeds and measure the loss. | Anti-hack triggered 0 times across 4800 training rollouts on v4. Format reward saturates at 1.0 from step 1, so GRPO actual-signal concentrates on milestone + communication — exactly where we want the gradient. |
+| **Penalty cap as a fraction of milestone credit** (reward surgery, landed in v4) | Pre-surgery, long-horizon tasks (max_rounds=27) accumulated enough time-pressure penalty to erase all milestone credit. This accidentally made easy tasks score LOWER than hard tasks. | After the cap landed, task4's mean training reward went from 0.01 (stuck) to 0.109 (3.6 milestones/episode). Procedural_hard went from 0.34 to 0.50. Mean reward 0.263 → 0.338. |
+| **Procedural task generator with 5 fault primitives × 10 services × difficulty scaling** | Static task distributions saturate fast. RLVE thesis — keep the model at its capability frontier. | v3 trained on procedural-only and beat base by +0.046 composite on scripted eval despite never seeing those scripted tasks in training. Broader 6-task mix trained adapter had lower transfer. |
+| **Multirole structured completion format** (`### TRIAGE / ### DIAGNOSIS / ### REMEDIATION`) as the round-0 training target | Training rollout must optimise the same thing eval measures. Previously training only graded diagnosis round-0 while eval ran three roles for up to 20 rounds. | First positive adapter (v3, +0.046) landed the instant train and eval shapes aligned. Task2 score went from 0.048 to 0.188 — the base model gets distracted by the CPU red herring; the trained model stays focused on the memory leak. |
+| **Oracle-audited verifiers** (`scripts/oracle_audit.py`) | A scripted perfect-knowledge policy must be able to score ≥0.85 on every task. If it can't, the task has an unreachable milestone that RL can't fix. | Caught two bugs: task2 `diagnosis_reads_oom` checking literal "OOM" when the syslog fixture had "oom-killer" + "Out of memory"; task2 `diagnosis_identifies_pid` requiring "ps" in the same round the PID is mentioned (chicken-and-egg). After fixes, oracle scores went 0.99 / 0.95 / 0.88 on task1/2/3 respectively. |
+| **SFT warm-up on oracle-generated multirole examples** | Hackathon doc §16/§45: RL works best when the model can occasionally succeed. Our model couldn't on task3, so GRPO had no positive signal to reinforce. | SFT adapter hits `eval_loss=0.024` and `mean_token_accuracy=0.991` on the format in 5 minutes. A single SFT completion on task3 hits 5 milestones including `diagnosis_pushback_bonus` — the first time that milestone has fired in any of our runs. v5-SFT (GRPO on the SFT checkpoint) is training now. |
+
+The environment pushed training forward. Every version gets better because we can see what's broken.
+
+See [outputs/RESULTS.md](outputs/RESULTS.md) for the full v1→v5-SFT run log with per-run metrics.
+
+---
+
 ## Try it
 
 Live Gradio dashboard: [https://huggingface.co/spaces/brodie1of1/war-room](https://huggingface.co/spaces/brodie1of1/war-room)
