@@ -1392,17 +1392,35 @@ def train_grpo(
             weights_path = _os.path.join(local_path, "adapter_model.safetensors")
             if _os.path.exists(weights_path):
                 state = safetensors.torch.load_file(weights_path)
-                # Strip peft's "base_model.model." prefix if the saved
-                # weights have it but the current model doesn't (or vice
-                # versa). Fall back to strict=False to be safe.
-                missing, unexpected = model.load_state_dict(state, strict=False)
-                matched = sum(
-                    1 for k in state.keys() if not any(u in k for u in unexpected)
-                )
+                # PEFT key-naming convention: when an adapter is saved to
+                # disk, keys look like
+                #   base_model.model.model.layers.0...lora_A.weight
+                # but the LIVE PeftModel stores adapters in a ModuleDict
+                # keyed by adapter name, so the in-memory keys are
+                #   base_model.model.model.layers.0...lora_A.default.weight
+                # We rewrite the saved keys to insert the adapter name
+                # ("default") right before .weight on lora_A / lora_B so
+                # load_state_dict() can match them.
+                renamed: dict = {}
+                for k, v in state.items():
+                    if k.endswith(".lora_A.weight") or k.endswith(".lora_B.weight"):
+                        prefix = k[: -len(".weight")]
+                        renamed[f"{prefix}.default.weight"] = v
+                    else:
+                        renamed[k] = v
+                missing, unexpected = model.load_state_dict(renamed, strict=False)
+                matched = len(renamed) - len(unexpected)
                 print(
-                    f"  ✅ Loaded SFT weights: {matched}/{len(state)} keys matched, "
+                    f"  ✅ Loaded SFT weights: {matched}/{len(renamed)} keys matched, "
                     f"{len(missing)} missing, {len(unexpected)} unexpected",
                 )
+                if matched == 0:
+                    print(
+                        "  ⚠️  WARNING: 0 keys matched — SFT weights silently dropped. "
+                        "Inspect a few unexpected keys to debug:"
+                    )
+                    for k in list(unexpected)[:3]:
+                        print(f"    unexpected: {k}")
             else:
                 # Fall back to the PeftModel.from_pretrained path (replaces model)
                 model = PeftModel.from_pretrained(
