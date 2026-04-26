@@ -16,12 +16,38 @@ tags:
 
 # Multi-Agent Incident War Room
 
-An OpenEnv environment for training LLMs to cooperate under partial observability and push back when a teammate is wrong.
+> **When the monitoring dashboard lies, can AI agents push back on each other?**
+>
+> An OpenEnv environment where three agents — triage, diagnosis, remediation — have to resolve a production incident under partial observability, while phantom alerts deliberately try to mislead them. We train Qwen2.5-7B with GRPO to not get fooled.
 
-[Live demo on HF Spaces](https://huggingface.co/spaces/brodie1of1/war-room) · [Trained adapter](https://huggingface.co/brodie1of1/war-room-grpo-adapter-v3) · [Blog post](Blog.md) · [GitHub](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers)
+![Head-to-head: base Qwen 7B vs our GRPO-trained adapter on scripted incident tasks](outputs/llm_eval/v3/head_to_head.png)
+
+_**Our trained adapter beats base Qwen 7B by +0.046 composite score (4× lift on the memory-leak task). First adapter in our iteration series to land on the right side of zero.**_
+
+[🌐 Live demo](https://huggingface.co/spaces/brodie1of1/war-room) · [🤗 Trained adapter](https://huggingface.co/brodie1of1/war-room-grpo-adapter-v3) · [📝 Blog post](Blog.md) · [💻 GitHub](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers) · [📓 Colab notebook](round2/war_room/train_colab.ipynb)
 
 Team ClaudeStalkers — Siddharth, Lakshminath, Lokesh — BITS Pilani Hyderabad
 Theme #1: Multi-Agent Interactions
+
+---
+
+## For the judge: how to evaluate this submission in 10 minutes
+
+| If you have… | Do this |
+|---|---|
+| 30 seconds | Read the callout above. That's our hero result. |
+| 2 minutes | Open the [Live demo](https://huggingface.co/spaces/brodie1of1/war-room), reset on Task 3, hit Play. Watch the three agents coordinate (or the base model get fooled by the phantom Redis alert). |
+| 5 minutes | Skim the [Blog post](Blog.md) — engineering-log style, honest about what failed and what worked. |
+| 10 minutes | Run `pytest tests/ -v` (172 tests), `python scripts/oracle_audit.py`, `python round2/war_room/eval_generalization.py`. No GPU required. |
+
+### Rubric alignment
+
+| Criterion | Weight | Where to look |
+|---|---:|---|
+| **Environment Innovation** | 40% | [What's actually novel](#whats-actually-novel) — phantom alerts, role-based partial observability, procedural task generator, composable reward primitives. |
+| **Storytelling** | 30% | [Live demo](https://huggingface.co/spaces/brodie1of1/war-room) with belief-state tracker + executive-panic injection, plus [Blog post](Blog.md) that walks through what broke and what fixed it. |
+| **Improvement** | 20% | Head-to-head chart above + [60-seed generalisation study](outputs/generalization_eval/generalization_score.png) + [reward ablation](outputs/reward_ablation/ablation_overall.png). |
+| **Reward & Pipeline** | 10% | Four decomposed reward functions with ablation evidence, anti-hack multiplicative gate, oracle-audited verifiers, SFT warm-up + GRPO training pipeline. |
 
 ---
 
