@@ -1366,13 +1366,51 @@ def train_grpo(
         print(f"\n[1b/5] Loading SFT adapter from {sft_checkpoint}...")
         try:
             from peft import PeftModel
-            # If the base model already has a PEFT adapter from get_peft_model,
-            # we need to merge the SFT checkpoint into the existing adapter structure
-            if hasattr(model, "load_adapter"):
-                model.load_adapter(sft_checkpoint, adapter_name="default")
+            import safetensors.torch
+            import os as _os
+
+            # We already called get_peft_model above, so `model` is a PeftModel
+            # with a fresh (empty) adapter named "default". The SFT checkpoint
+            # ALSO has an adapter named "default". If we call
+            # model.load_adapter(name="default") that tries to add a second
+            # adapter with the same name and either errors or silently no-ops.
+            #
+            # The right thing is to load the SFT weights into the existing
+            # default adapter. We do that by downloading the SFT adapter
+            # locally and then calling load_state_dict on the peft layers.
+
+            # If the path is a HF hub repo id, download it
+            local_path = sft_checkpoint
+            if "/" in sft_checkpoint and not _os.path.isdir(sft_checkpoint):
+                from huggingface_hub import snapshot_download
+                local_path = snapshot_download(
+                    repo_id=sft_checkpoint,
+                    allow_patterns=["adapter_model.safetensors", "adapter_config.json"],
+                )
+                print(f"  downloaded SFT adapter to {local_path}")
+
+            weights_path = _os.path.join(local_path, "adapter_model.safetensors")
+            if _os.path.exists(weights_path):
+                state = safetensors.torch.load_file(weights_path)
+                # Strip peft's "base_model.model." prefix if the saved
+                # weights have it but the current model doesn't (or vice
+                # versa). Fall back to strict=False to be safe.
+                missing, unexpected = model.load_state_dict(state, strict=False)
+                matched = sum(
+                    1 for k in state.keys() if not any(u in k for u in unexpected)
+                )
+                print(
+                    f"  ✅ Loaded SFT weights: {matched}/{len(state)} keys matched, "
+                    f"{len(missing)} missing, {len(unexpected)} unexpected",
+                )
             else:
-                model = PeftModel.from_pretrained(model, sft_checkpoint, is_trainable=True)
-            print("  ✅ SFT adapter loaded — model starts with format-compliant policy")
+                # Fall back to the PeftModel.from_pretrained path (replaces model)
+                model = PeftModel.from_pretrained(
+                    model.base_model.model if hasattr(model, "base_model") else model,
+                    local_path,
+                    is_trainable=True,
+                )
+                print("  ✅ SFT adapter loaded via PeftModel.from_pretrained")
         except Exception as e:
             print(f"  ⚠️  Could not load SFT adapter: {e}")
             print("      Falling back to raw instruct model (high risk of zero-reward collapse)")
