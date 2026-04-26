@@ -1310,11 +1310,15 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                         "run is measured against.\n"
                     )
                     gr.Markdown(
-                        "> ℹ️ The trained adapter is published at "
-                        "[brodie1of1/war-room-grpo-adapter]"
-                        "(https://huggingface.co/brodie1of1/war-room-grpo-adapter). "
-                        "Loading requires peft + 15GB base weights, which exceeds "
-                        "free Space hardware. See README for local-loading instructions."
+                        "> ℹ️ **Why no live trained-model inference here?** Our trained "
+                        "adapter is published at [brodie1of1/war-room-grpo-adapter-v3]"
+                        "(https://huggingface.co/brodie1of1/war-room-grpo-adapter-v3) "
+                        "but Qwen 7B + LoRA inference doesn't fit on free HF Space "
+                        "hardware (CPU-only, ~60s/round), and the HF Inference "
+                        "Providers router doesn't serve our private LoRA. For the "
+                        "trained-model behaviour see the [head-to-head chart](https://huggingface.co/spaces/brodie1of1/war-room/blob/main/outputs/llm_eval/v3/head_to_head.png), "
+                        "the verbatim [worked-example trace](https://huggingface.co/spaces/brodie1of1/war-room/blob/main/outputs/worked_example/task2_seed33_rollout.json), "
+                        "or run the [Colab notebook](https://colab.research.google.com/github/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/round2/war_room/train_colab.ipynb) to reproduce locally."
                     )
                     with gr.Row():
                         agent_mode_toggle = gr.Checkbox(
@@ -1323,11 +1327,14 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                             scale=1,
                         )
                         agent_preset = gr.Radio(
-                            choices=["🤖 Base Qwen 7B", "🎯 Trained (local MLX)"],
-                            value="🤖 Base Qwen 7B",
+                            choices=[
+                                "🤖 Base Qwen 7B (live — click here)",
+                                "🎯 Trained (local-only, see README)",
+                            ],
+                            value="🤖 Base Qwen 7B (live — click here)",
                             label="Preset",
                             scale=2,
-                            info="Trained preset requires local MLX server — run bash scripts/run_mlx_server.sh on your M-series Mac first.",
+                            info="The Base Qwen 7B preset runs live via HF Inference Providers — click Enable and press Next to watch the untrained baseline. The Trained preset only works when running this Space locally with an MLX server; judges viewing the hosted Space should use the Base preset and check outputs/llm_eval/v3/head_to_head.png for trained-model behavior.",
                         )
                     with gr.Row():
                         model_name_input = gr.Textbox(
@@ -1349,10 +1356,15 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                             # Local MLX server (Apple Silicon). Start it with:
                             #   bash scripts/run_mlx_server.sh
                             # Then the Gradio UI connects at localhost:8080.
+                            # Web judges viewing the hosted Space CANNOT use this —
+                            # the UI label is explicit that this is local-only.
                             return (
                                 "brodie1of1/war-room-7b-merged",
                                 "http://localhost:8080/v1",
                             )
+                        # Base Qwen 7B — served via HF Inference Providers router.
+                        # Empty URL falls back to LiveAgentConfig's default
+                        # (https://router.huggingface.co/v1).
                         return ("Qwen/Qwen2.5-7B-Instruct", "")
 
                     agent_preset.change(
