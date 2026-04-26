@@ -1,56 +1,56 @@
 {
   "v6_summary": {
-    "steps_logged": 27,
-    "epoch_first": 0.56,
-    "epoch_last": 0.58,
+    "steps_logged": 24,
+    "epoch_first": 0.59,
+    "epoch_last": 0.6,
     "milestone_reward_distribution": {
-      "at_floor_le_0p011": 5,
-      "partial_0p011_to_0p95": 19,
-      "near_solve_ge_0p95": 3,
-      "fraction_partial": 0.7037037037037037
+      "at_floor_le_0p011": 4,
+      "partial_0p011_to_0p95": 18,
+      "near_solve_ge_0p95": 2,
+      "fraction_partial": 0.75
     },
     "lifetime_means": {
-      "loss": 0.031981481481481486,
-      "grad_norm": 0.626367753992478,
-      "kl": 0.7995966614948379,
-      "reward": 0.5903333580052411,
-      "rewards/reward_milestone/mean": 0.3186111113539449,
+      "loss": 0.029312500000000002,
+      "grad_norm": 0.5053213958938917,
+      "kl": 0.7327012854317824,
+      "reward": 0.554625024398168,
+      "rewards/reward_milestone/mean": 0.26343750006829697,
       "rewards/reward_format_lenient/mean": 1.0,
-      "rewards/reward_communication/mean": 0.9944444431198968
+      "rewards/reward_communication/mean": 0.977083332836628
     },
     "last_20_steps_means": {
-      "loss": 0.032985,
-      "grad_norm": 0.653654944896698,
-      "kl": 0.8246648862957955,
-      "reward": 0.5975500240921974,
-      "rewards/reward_milestone/mean": 0.33050000127404927
+      "loss": 0.02942,
+      "grad_norm": 0.5871540676802397,
+      "kl": 0.7353997528553009,
+      "reward": 0.5213500201702118,
+      "rewards/reward_milestone/mean": 0.2091249988414347
     }
   },
   "v7_summary": {
-    "steps_logged": 14,
-    "epoch_first": 0.09,
-    "epoch_last": 0.09,
+    "steps_logged": 5,
+    "epoch_first": 0.11,
+    "epoch_last": 0.11,
     "milestone_reward_distribution": {
-      "at_floor_le_0p011": 1,
-      "partial_0p011_to_0p95": 12,
-      "near_solve_ge_0p95": 1,
-      "fraction_partial": 0.8571428571428571
+      "at_floor_le_0p011": 0,
+      "partial_0p011_to_0p95": 5,
+      "near_solve_ge_0p95": 0,
+      "fraction_partial": 1.0
     },
     "lifetime_means": {
-      "loss": 0.0594,
-      "grad_norm": 2.14664039388299,
-      "kl": 1.4850552018199648,
-      "reward": 0.6097857377358845,
-      "rewards/reward_milestone/mean": 0.4134821448658061,
-      "rewards/reward_format_lenient/mean": 0.9982142874172756,
-      "rewards/reward_communication/mean": 0.7464285876069751
+      "loss": 0.05068,
+      "grad_norm": 1.461801290512085,
+      "kl": 1.2675356715917587,
+      "reward": 0.600190031528473,
+      "rewards/reward_milestone/mean": 0.398650012165308,
+      "rewards/reward_format_lenient/mean": 1.0,
+      "rewards/reward_communication/mean": 0.7400000214576721
     },
     "last_20_steps_means": {
-      "loss": 0.0594,
-      "grad_norm": 2.14664039388299,
-      "kl": 1.4850552018199648,
-      "reward": 0.6097857377358845,
-      "rewards/reward_milestone/mean": 0.4134821448658061
+      "loss": 0.05068,
+      "grad_norm": 1.461801290512085,
+      "kl": 1.2675356715917587,
+      "reward": 0.600190031528473,
+      "rewards/reward_milestone/mean": 0.398650012165308
     }
   },
   "v6_job_id": "69ed9454d70108f37acdf848",
