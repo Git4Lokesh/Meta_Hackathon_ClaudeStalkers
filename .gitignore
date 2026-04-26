@@ -41,3 +41,17 @@ outputs/war_room_grpo_multirole_v2/merges.txt
 # Internal team-communication scratch files, not for the public repo.
 LAKSHMINATH_MESSAGE.md
 outputs/v6_vs_v7_comparison/poll_v7_stderr.log
+
+# v7 full run — same pattern as v6: commit metrics + charts + config, not weights/tokenizer
+outputs/v7trainingresults/adapter_model.safetensors
+outputs/v7trainingresults/*.safetensors
+outputs/v7trainingresults/tokenizer.json
+outputs/v7trainingresults/vocab.json
+outputs/v7trainingresults/merges.txt
+outputs/v7trainingresults/added_tokens.json
+outputs/v7trainingresults/special_tokens_map.json
+outputs/v7trainingresults/tokenizer_config.json
+outputs/v7trainingresults/.gitattributes
+outputs/v7trainingresults/.cache
+# Default Hub model card (template); use RESULTS.md in repo for our write-up
+outputs/v7trainingresults/README.md
