@@ -1,0 +1,55 @@
+{
+  "per_model_task": {
+    "base": {
+      "task1": {
+        "avg_score": 0.75,
+        "avg_rounds": 10,
+        "avg_pushbacks": 0,
+        "resolved_rate": 0.0,
+        "n_seeds": 5
+      },
+      "task2": {
+        "avg_score": 0.048,
+        "avg_rounds": 15,
+        "avg_pushbacks": 0.6,
+        "resolved_rate": 0.0,
+        "n_seeds": 5
+      },
+      "task3": {
+        "avg_score": 0.01,
+        "avg_rounds": 20,
+        "avg_pushbacks": 0.8,
+        "resolved_rate": 0.0,
+        "n_seeds": 5
+      }
+    },
+    "trained": {
+      "task1": {
+        "avg_score": 0.748,
+        "avg_rounds": 10,
+        "avg_pushbacks": 0,
+        "resolved_rate": 0.0,
+        "n_seeds": 5
+      },
+      "task2": {
+        "avg_score": 0.188,
+        "avg_rounds": 15,
+        "avg_pushbacks": 1.2,
+        "resolved_rate": 0.0,
+        "n_seeds": 5
+      },
+      "task3": {
+        "avg_score": 0.01,
+        "avg_rounds": 20,
+        "avg_pushbacks": 0.4,
+        "resolved_rate": 0.0,
+        "n_seeds": 5
+      }
+    }
+  },
+  "overall_composite": {
+    "base": 0.2693,
+    "trained": 0.3153
+  },
+  "delta_composite": 0.046
+}

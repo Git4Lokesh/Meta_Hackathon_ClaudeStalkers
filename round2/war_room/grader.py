@@ -13,6 +13,18 @@ COMMUNICATION_USEFUL_BONUS = 0.05
 COMMUNICATION_INCORRECT_PENALTY = 0.02
 FATAL_SCORE = 0.01
 ROLE_VIOLATION_PENALTY = 0.01
+# Solve bonus: fired when every milestone is hit. Makes "solved cleanly" always
+# score higher than "solved with lots of no-ops", and cleanly above the naked
+# milestone-credit floor. Part of the reward-shape fix for v4 training — see
+# notes in the commit introducing this constant.
+SOLVE_BONUS = 0.10
+# Cap on total per-round penalty as a fraction of the total milestone credit
+# available in the task. Without this, long-horizon tasks (e.g. procedural_easy
+# with max_rounds=27) accumulate enough time_pressure + noop penalty to erase
+# all milestone credit, which produces the perverse result that harder (shorter
+# horizon) tasks score higher than easy ones. 0.40 preserves time-pressure as
+# a signal while guaranteeing that a correct solve always beats a nonsolve.
+PENALTY_CAP_FRACTION = 0.40
 
 TASK_WEIGHTS = {"task1": 0.15, "task2": 0.25, "task3": 0.35, "task4": 0.25}
 
@@ -175,11 +187,32 @@ class MultiAgentGrader:
         return comm_reward
 
     def current_score(self) -> float:
-        """Compute current team score."""
+        """Compute current team score.
+
+        Reward shape (v4 — post reward-surgery):
+
+          raw = credit - min(penalty, cap) + bonus + solve_bonus
+
+        Where:
+          credit  = sum of milestone credits achieved
+          penalty = accumulated time_pressure + noop + comm_incorrect +
+                    role_violation penalties
+          cap     = PENALTY_CAP_FRACTION × total_milestone_credit  (prevents
+                    long-horizon tasks from accumulating enough penalty to
+                    swamp all milestone credit)
+          bonus   = comm_useful bonuses (for messages that enabled milestones)
+          solve_bonus = +SOLVE_BONUS iff every milestone is hit, else 0
+
+        Pre-v4 (pre-fix): penalty was uncapped so procedural_easy
+        (max_rounds=27) would accumulate 0.27 of time_pressure alone, which
+        inverted the task-difficulty/reward relationship. Post-fix, a
+        correct solve always beats a non-solve regardless of horizon.
+        """
         if self.fatal_triggered:
             return FATAL_SCORE
 
         credit = sum(m.credit for m in self.milestones if m.name in self.achieved)
+        total_credit = sum(m.credit for m in self.milestones)
 
         penalty = 0.0
         bonus = 0.0
@@ -197,11 +230,25 @@ class MultiAgentGrader:
             elif p.startswith("comm_useful"):
                 bonus += COMMUNICATION_USEFUL_BONUS
 
-        raw = credit - penalty + bonus
+        # Cap penalty as a fraction of total available milestone credit, so the
+        # agent cannot be punished more than it could theoretically earn.
+        penalty_cap = PENALTY_CAP_FRACTION * max(total_credit, 0.01)
+        penalty_applied = min(penalty, penalty_cap)
+
+        # Solve bonus: a clean full-milestone solve always scores clearly above
+        # any partial one, regardless of rounds used.
+        solve_bonus = 0.0
+        if len(self.achieved) == len(self.milestones) and self.milestones:
+            solve_bonus = SOLVE_BONUS
+
+        raw = credit - penalty_applied + bonus + solve_bonus
         self._last_reward_components = {
             "milestone_credit": credit,
-            "penalty_total": penalty,
+            "penalty_raw": penalty,
+            "penalty_cap": penalty_cap,
+            "penalty_applied": penalty_applied,
             "communication_bonus": bonus,
+            "solve_bonus": solve_bonus,
             "raw_score": raw,
             "final_score": max(0.01, min(0.99, raw)),
         }

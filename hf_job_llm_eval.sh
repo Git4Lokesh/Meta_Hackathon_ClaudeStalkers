@@ -31,6 +31,13 @@ TIMEOUT="${TIMEOUT:-30m}"
 SEEDS="${SEEDS:-11 22 33 44 55}"
 TASKS="${TASKS:-task1 task2 task3}"
 ADAPTER_REPO="${ADAPTER_REPO:-brodie1of1/war-room-grpo-adapter}"
+# Repo to push eval artifacts to. Defaults to the adapter repo itself, but
+# override when evaluating adapters owned by someone else (we can't push to
+# a repo we don't own). Example:
+#   ADAPTER_REPO=GeminiHugger/war-room-grpo-multirole-v2 \
+#   UPLOAD_REPO=brodie1of1/war-room-eval-results \
+#   bash hf_job_llm_eval.sh
+UPLOAD_REPO="${UPLOAD_REPO:-$ADAPTER_REPO}"
 
 INNER_CMD=$(cat <<'EOF'
 set -euo pipefail
@@ -83,10 +90,11 @@ echo "=== [6/6] Push results to HF Hub ==="
 python - <<'PY'
 import os
 from huggingface_hub import HfApi, create_repo
-repo = os.environ.get("ADAPTER_REPO_ARG", "brodie1of1/war-room-grpo-adapter")
+repo = os.environ.get("UPLOAD_REPO_ARG") or os.environ.get("ADAPTER_REPO_ARG", "brodie1of1/war-room-grpo-adapter")
 token = os.environ.get("HF_TOKEN")
 api = HfApi(token=token)
 # Upload results alongside the adapter so it all lives in one place.
+create_repo(repo, repo_type="model", exist_ok=True, token=token)
 api.upload_folder(
     folder_path="outputs/llm_eval",
     path_in_repo="eval",
@@ -105,11 +113,12 @@ SEEDS_ARG_JOINED=$(echo "$SEEDS" | tr ' ' ' ')
 TASKS_ARG_JOINED=$(echo "$TASKS" | tr ' ' ' ')
 
 echo "=== HF Jobs — LLM head-to-head ==="
-echo "Flavor   : $FLAVOR"
-echo "Timeout  : $TIMEOUT"
-echo "Tasks    : $TASKS_ARG_JOINED"
-echo "Seeds    : $SEEDS_ARG_JOINED"
-echo "Adapter  : $ADAPTER_REPO"
+echo "Flavor    : $FLAVOR"
+echo "Timeout   : $TIMEOUT"
+echo "Tasks     : $TASKS_ARG_JOINED"
+echo "Seeds     : $SEEDS_ARG_JOINED"
+echo "Adapter   : $ADAPTER_REPO"
+echo "Upload to : $UPLOAD_REPO"
 echo ""
 
 hf jobs run \
@@ -119,6 +128,7 @@ hf jobs run \
     -e SEEDS_ARG="$SEEDS_ARG_JOINED" \
     -e TASKS_ARG="$TASKS_ARG_JOINED" \
     -e ADAPTER_REPO_ARG="$ADAPTER_REPO" \
+    -e UPLOAD_REPO_ARG="$UPLOAD_REPO" \
     --detach \
     pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel \
     bash -c "$INNER_CMD"
