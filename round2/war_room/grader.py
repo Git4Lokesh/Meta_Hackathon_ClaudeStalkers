@@ -7,11 +7,31 @@ from round2.war_room.communication import CommunicationChannel
 from sre_env.server.simulated_system import SimulatedSystem
 
 # Constants
-TIME_PRESSURE_PENALTY = 0.01
+# v7 reward surgery (2026-04-26):
+#   v5/v6 analysis showed that task2/3/5/6 stayed pinned at score=0.01
+#   across ALL 800 episodes per task, even though the model was actually
+#   hitting 1-2 milestones per episode. Root cause: penalty cap (0.40 of
+#   total credit, ~= 0.40 absolute) + time_pressure 0.01/round meant that
+#   for hard 20-round tasks the penalty saturated at 0.20 -- bigger than
+#   the 0.10-0.30 of partial credit the model could earn from 1-2 of the
+#   smallest milestones (which often have credit=0.05). Result: raw score
+#   was negative, clamped to the 0.01 floor, GRPO saw a flat reward
+#   surface, no gradient, no learning.
+#
+# Fix (v7):
+#   - TIME_PRESSURE_PENALTY: 0.01 -> 0.005 (halve per-round penalty)
+#   - PENALTY_CAP_FRACTION: 0.40 -> 0.10 (tighter cap)
+#   - Lower-clamp in current_score(): 0.01 -> 0.001 (preserve sub-floor
+#     gradient for "just barely failing" episodes)
+#
+# Effect: task1/example_custom (already solving, scoring ~0.6/0.95) move
+# only ~0.05 absolute. task2 at ms=2 jumps from 0.01 -> 0.125. task5 at
+# ms=3 jumps from 0.01 -> 0.10. GRPO finally has gradient on hard tasks.
+TIME_PRESSURE_PENALTY = 0.005
 NOOP_PENALTY = 0.01
 COMMUNICATION_USEFUL_BONUS = 0.05
 COMMUNICATION_INCORRECT_PENALTY = 0.02
-FATAL_SCORE = 0.01
+FATAL_SCORE = 0.001
 ROLE_VIOLATION_PENALTY = 0.01
 # Solve bonus: fired when every milestone is hit. Makes "solved cleanly" always
 # score higher than "solved with lots of no-ops", and cleanly above the naked
@@ -19,12 +39,11 @@ ROLE_VIOLATION_PENALTY = 0.01
 # notes in the commit introducing this constant.
 SOLVE_BONUS = 0.10
 # Cap on total per-round penalty as a fraction of the total milestone credit
-# available in the task. Without this, long-horizon tasks (e.g. procedural_easy
-# with max_rounds=27) accumulate enough time_pressure + noop penalty to erase
-# all milestone credit, which produces the perverse result that harder (shorter
-# horizon) tasks score higher than easy ones. 0.40 preserves time-pressure as
-# a signal while guaranteeing that a correct solve always beats a nonsolve.
-PENALTY_CAP_FRACTION = 0.40
+# available in the task. v7: tightened from 0.40 -> 0.10 so that partial
+# milestone credit (1-2 hits at ~0.05-0.10 each) on long-horizon tasks
+# survives the penalty cap and surfaces as positive raw score, giving
+# GRPO a gradient on task2/3/5/6 instead of a flat 0.01 floor.
+PENALTY_CAP_FRACTION = 0.10
 
 TASK_WEIGHTS = {"task1": 0.15, "task2": 0.25, "task3": 0.35, "task4": 0.25}
 
@@ -250,9 +269,9 @@ class MultiAgentGrader:
             "communication_bonus": bonus,
             "solve_bonus": solve_bonus,
             "raw_score": raw,
-            "final_score": max(0.01, min(0.99, raw)),
+            "final_score": max(0.001, min(0.99, raw)),
         }
-        return max(0.01, min(0.99, raw))
+        return max(0.001, min(0.99, raw))
 
     def _assign_credit(self, milestone_name: str, actions: MultiAgentAction, outputs: dict[str, str]):
         """Determine which agent contributed to a milestone."""

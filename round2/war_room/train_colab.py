@@ -714,7 +714,7 @@ def _run_war_room_episode_inner(
     milestones = obs.metadata.get("milestones_achieved", [])
 
     return {
-        "env_reward": float(max(0.01, min(0.99, score))),
+        "env_reward": float(max(0.001, min(0.99, score))),
         "rounds_used": rounds_used,
         "milestones_hit": len(milestones) if isinstance(milestones, list) else 0,
     }
