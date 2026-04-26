@@ -31,10 +31,10 @@
 
 set -euo pipefail
 
-FLAVOR="${FLAVOR:-l40sx1}"
-TIMEOUT="${TIMEOUT:-2h}"
+FLAVOR="${FLAVOR:-h200}"
+TIMEOUT="${TIMEOUT:-90m}"
 EPISODES="${EPISODES:-50}"
-TASKS="${TASKS:-task1 task2 task3 procedural_easy}"
+TASKS="${TASKS:-task1 task2 task3 task4 task5 task6 example_custom procedural_easy procedural_hard}"
 MODEL="${MODEL:-Qwen/Qwen2.5-7B-Instruct}"
 SFT_CHECKPOINT="${SFT_CHECKPOINT:-GeminiHugger/war-room-sft-v1-r32}"
 LORA_R="${LORA_R:-32}"
