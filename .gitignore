@@ -30,4 +30,10 @@ outputs/war_room_grpo/tokenizer_config.json
 !outputs/war_room_grpo/*.png
 !outputs/war_room_grpo/metrics.json
 !outputs/war_room_grpo/adapter_config.json
+
+# GRPO multirole v2 — large tokenizer + weights exceed GitHub limits; keep in git LFS or HF Hub only
+outputs/war_room_grpo_multirole_v2/adapter_model.safetensors
+outputs/war_room_grpo_multirole_v2/tokenizer.json
+outputs/war_room_grpo_multirole_v2/vocab.json
+outputs/war_room_grpo_multirole_v2/merges.txt
 .venv/
