@@ -1,109 +1,162 @@
-# 🧠 Hallucinations as a Feature: Training LLMs for Theory-of-Mind in Adversarial War Rooms
+# Training an LLM to push back when the dashboard lies
 
-*A submission for the Meta Hackathon / Hugging Face OpenEnv Challenge (Theme #1: Multi-Agent Interactions)*
-*Team ClaudeStalkers — Siddharth, Lakshminath, Lokesh — BITS Pilani Hyderabad*
+*Building a multi-agent incident war room for the OpenEnv hackathon — what we built, what broke, and where it ends up beating base Qwen 7B.*
 
----
-
-When building multi-agent systems, most environments focus on frictionless cooperation: agents are perfectly honest, APIs always return the truth, and everyone shares a unified view of the system.
-
-But production incidents don't work like that.
-
-In the real world, dashboards show cached stale metrics. Alerting systems throw red herrings. And human engineers often misdiagnose root causes based on panicked assumptions. To train an LLM to be an effective Site Reliability Engineer, we cannot just teach it how to read `ps aux` — we must teach it **Theory of Mind**.
-
-For this hackathon, we built the **Multi-Agent Incident War Room**: a fully functional, partially-observable OpenEnv environment designed to train models (like Qwen and Llama-3) to handle deception, conflicting beliefs, and multi-agent negotiation under pressure.
-
-**Try it live:** [https://huggingface.co/spaces/brodie1of1/war-room](https://huggingface.co/spaces/brodie1of1/war-room)
-
-## The Environment Architecture
-
-Our environment deploys three specialized agents into a Slack-like channel to resolve a simulated Linux server failure:
-
-1. **🚨 Triage:** The first responder. They have access to the high-level PagerDuty dashboard and alerts.
-2. **🔎 Diagnosis (The Learner):** The core incident responder. They have read-only access to log files, `strace`, `netstat`, and other diagnostic tools.
-3. **🛠️ Remediation:** The executor. They have write-access to restart services and edit config files, but they are blind to the logs.
-
-Because the system imposes **strict partial observability**, no single agent can solve the incident alone. Triage sees alerts but cannot read logs. Diagnosis reads logs but cannot restart services. Remediation can fix things but has no idea what is broken unless someone tells them. Communication is not optional — it is the mechanism of resolution.
-
-## Four Escalating Scenarios
-
-We designed four tasks that progressively challenge the agents' coordination, reasoning, and resistance to deception.
-
-**Task 1 — Coordinated Service Restart (Easy).** Nginx has crashed. Triage sees the alert and must escalate to Diagnosis. Diagnosis reads the nginx error logs, identifies the segfault, and communicates findings to Remediation. Remediation restarts the service and the team verifies recovery. This task teaches basic three-agent coordination: observe, communicate, act, verify. The milestone chain is linear and rewards clear handoffs between roles.
-
-**Task 2 — Memory Leak with Misdirection (Medium).** A data processor is leaking memory and has been killed by the OOM killer. But a high-CPU `api_gateway` process acts as a red herring, dominating the dashboard. Triage must resist the urge to fixate on CPU and instead prioritize the memory alert. Diagnosis must identify the correct leaking PID from `ps aux` output and communicate it precisely. This task introduces the concept of prioritization under noise — agents that chase the loudest alert instead of the most critical one will fail.
-
-**Task 3 — Cascading Failure with Conflicting Information (Hard).** A wrong database password causes a cascade: `db_connector` fails, which takes down `app_server` and `load_balancer`. Meanwhile, Redis memory warnings are surfaced prominently as phantom alerts — stale cached metrics that look alarming but are completely irrelevant. This is where Theory of Mind becomes critical. Triage panics about Redis. Diagnosis checks the Redis logs and finds nothing wrong. The pivotal moment: does Diagnosis hallucinate a Redis fix to appease the panicked Triage agent, or does it push back and redirect the team toward the real root cause? We award a dedicated "pushback bonus" milestone when Diagnosis explicitly tells the team that Redis is NOT the issue.
-
-**Task 4 — Simultaneous Incidents (Expert).** This scenario composes Task 1 and Task 2 into a single environment: nginx has crashed AND a process is leaking memory, simultaneously. Agents must triage, diagnose, and remediate two independent incident tracks in parallel within 25 rounds. This tests the team's ability to context-switch, maintain separate mental models for each incident, and avoid conflating the two root causes.
-
-## The Innovation: Belief State Tracker and Phantom Alerts
-
-To push models beyond shallow next-token predictions toward emergent strategic behavior, we built the **Belief State Tracker**. This engine runs beneath the environment, constantly mapping what every agent *thinks* is true against the absolute ground truth.
-
-The tracker records each agent's observations, the beliefs they form from messages, and the commands they execute. When an agent acts on a false belief — for example, restarting Redis because Triage said it was critical — the tracker logs this as a "phantom chase." When an agent correctly identifies a phantom alert and pushes back, it logs a "phantom detection."
-
-These signals feed directly into the **Deception Resistance Score**, computed as a weighted combination: 70% detection rate (how many phantom alerts were correctly identified) plus 30% resilience rate (how many phantom alerts were not chased). A perfect score of 1.0 means the team detected every red herring and chased none of them.
-
-## Reward Decomposition: Five Independent Signals
-
-Rather than a single monolithic reward, we decompose the training signal into five independent, interpretable functions. Each one targets a different aspect of agent competence.
-
-1. **Format Compliance (weight: 0.15).** Does the agent's response follow the structured format? A score of 1.0 for valid COMMAND, MESSAGE_TO, and MESSAGE fields; 0.5 for a valid command without communication; 0.0 for unparseable output. This ensures the agent learns the protocol before learning strategy.
-
-2. **Milestone Progress (weight: 0.60).** The primary signal. Each task defines a chain of milestones — triage escalation, log reading, root cause identification, service restart, verification. The grader tracks which milestones have been achieved and computes a cumulative score clamped to the range (0.01, 0.99). This is the reward that teaches agents to actually solve incidents.
-
-3. **Communication Quality (weight: 0.15).** Messages are scored based on whether they contain specific actionable information: service names, PIDs, file paths, error descriptions relevant to the current task. A bonus is awarded for each useful message that contributes to a subsequent milestone being achieved, capped at five bonuses per episode to prevent message flooding.
-
-4. **Anti-Hack Detection (weight: 0.10).** A multiplicative gate that detects reward-hacking behaviors. If the agent submits the same command three or more times consecutively (loop detection), repeats a command more than five times total (repetition detection), or sends near-duplicate messages (spam detection via Jaccard word-overlap similarity), the entire reward for that completion is zeroed out. This prevents the agent from gaming the reward function through degenerate strategies.
-
-5. **Deception Resistance Score.** Computed by the Belief State Tracker, this measures how well the team handles injected false information. It is not a direct training reward but serves as an evaluation metric that tracks whether the agent is developing genuine Theory of Mind or simply memorizing action sequences.
-
-## Training Pipeline: GRPO on a Single GPU
-
-We did not just build a toy environment. We built a full reinforcement learning pipeline using **GRPO (Group Relative Policy Optimization)** from the TRL library. The training script loads Qwen2.5-7B-Instruct in 4-bit quantization via Unsloth with LoRA adapters (rank 16), making it trainable on a single free-tier Colab T4 GPU with 16 GB VRAM.
-
-Training follows a **curriculum schedule**: the first 30% of episodes use only Task 1 (basic coordination), the next 30% add Task 2 (misdirection resistance), and the final 40% include all four tasks. This prevents the model from being overwhelmed by hard scenarios before it has learned basic communication patterns.
-
-For the hackathon submission we ran the full pipeline on a Hugging Face Job (1x Nvidia L40S, $1.80/hr, scale-to-zero), merged the resulting LoRA adapter into the base Qwen2.5-7B weights, and deployed the merged model as an Inference Endpoint. The Agent Mode in our Gradio Space lets you flip between "base Qwen" and "trained model" to see the difference in real time.
-
-## Before and After: What Training Changes
-
-We measure improvement along two complementary dimensions. First, we compare our scripted baseline (`skill_level=0.0`) — agents that take random or minimally-useful actions — against our scripted expert policy (`skill_level=1.0`), which represents the target behavior the RL training should converge to. Running `demo_comparison.py` with seed=42 across all four tasks produces a clear signal:
-
-| Task | Metric | Baseline (skill=0.0) | Trained (skill=1.0) | Delta |
-|---|---|---|---|---|
-| Task 1 | Rounds to resolve | 10 | 4 | −6 |
-| Task 1 | Milestones | 0 | 5 | +5 |
-| Task 1 | Score | 0.01 | 0.99 | +0.98 |
-| Task 2 | Score | 0.01 | 0.46 | +0.45 |
-| Task 3 | Rounds to resolve | 20 | 6 | −14 |
-| Task 3 | Score | 0.01 | 0.88 | +0.87 |
-| Task 4 | Rounds to resolve | 25 | 5 | −20 |
-| Task 4 | Score | 0.01 | 0.93 | +0.92 |
-| **Composite** | **Weighted score** | **0.01** | **0.80** | **+0.79** |
-
-These numbers are reproducible — `PYTHONPATH=. python round2/war_room/demo_comparison.py` runs in under a second on CPU and prints this exact table. The baseline-vs-trained plot is committed to the repo at `outputs/war_room_grpo/baseline_vs_trained.png`.
-
-Second, we ran actual GRPO training on Qwen2.5-7B-Instruct via Hugging Face Jobs (1x Nvidia L40S, 48 GB VRAM). A 30-episode, 3-task run produced 91 gradient updates in 5 minutes 54 seconds of wall-clock time. Key observations from that run, committed to the repo as `outputs/war_room_grpo/metrics.json` and `training_curves.png`:
-
-- **Format compliance hits 1.0 from step 1.** Qwen 7B-Instruct follows the `COMMAND/MESSAGE_TO/MESSAGE` structure immediately, with no warm-up training. This is the benefit of starting with an instruction-tuned model.
-- **Anti-hack triggers remain at 0 throughout.** The trained policy never loops commands, never spams messages, never gets zeroed out by the multiplicative gate.
-- **Communication quality averages 0.4–0.8.** The model produces messages with concrete service names, PIDs, and file paths — which is what the communication reward function targets.
-- **Milestone reward averages 2.36 out of 4.** This is the growth edge. 30 episodes is not enough to converge; longer training (60+ episodes) on the full task suite should close the gap to 3+/4.
-
-The most striking change is qualitative: untrained agents (base Qwen in Agent Mode of the Space) blindly kill healthy services, follow panicked Executive chatter, and loop commands. Trained agents learn to say "I checked Redis and it looks fine — the real issue is the database password in database.yml." That pushback is Theory of Mind in action.
-
-## Try It Yourself
-
-The full environment, training pipeline, and interactive dashboard are deployed on HuggingFace Spaces:
-
-**[https://huggingface.co/spaces/brodie1of1/war-room](https://huggingface.co/spaces/brodie1of1/war-room)**
-
-The Gradio dashboard lets you step through incidents round by round, inspect the real-time Belief State Tracker, and watch agents coordinate (or fail to coordinate) under pressure. All source code is included in the repository.
-
-We believe that training LLMs for adversarial multi-agent coordination — where deception, partial observability, and conflicting beliefs are features, not bugs — is a critical step toward building AI systems that can operate reliably in the messy, noisy, and often misleading environments of the real world.
+Team ClaudeStalkers (Siddharth, Lakshminath, Lokesh), BITS Pilani Hyderabad.
 
 ---
 
-*Built with the OpenEnv framework, TRL, Unsloth, and Hugging Face Spaces.*
+Anyone who has been on-call at 3 AM knows the loneliest part isn't the alert. It's the moment someone in Slack says with full confidence "it's the database," and the logs quietly suggest it isn't, and you have to decide whether to trust the loud voice or the quiet evidence.
+
+We wanted to train a language model to make that call. Not by scripting the answer, but by putting it in an environment where the wrong answer is cheap and the right answer has to be pushed back against a panicked teammate. This is our submission for the OpenEnv hackathon's multi-agent track, and this post is a record of what we built, the places we were honest about being wrong, and the results we actually have in hand.
+
+Live demo and all code: [huggingface.co/spaces/brodie1of1/war-room](https://huggingface.co/spaces/brodie1of1/war-room).
+
+## The environment
+
+A war room has three roles. The triage engineer watches the monitoring dashboard and decides who should look at what. The diagnostician reads logs, runs `ps aux`, and figures out what's actually broken. The remediation engineer restarts services, edits configs, and brings things back. Nobody has the full picture.
+
+We built that as an OpenEnv environment where each role is a separate agent with strict permissions:
+
+- Triage can call `get_dashboard`, `escalate`, and send messages. It cannot read logs or restart services.
+- Diagnosis can run `cat`, `grep`, `tail`, `ps`, `top`, and send messages. It cannot restart services or edit configs.
+- Remediation can run `systemctl restart`, `edit`, `kill`, and send messages. It cannot see the dashboard or read logs.
+
+The permissions are enforced at the command parser. If the remediation agent tries to `cat /var/log/nginx/error.log`, the environment returns an error and the grader logs a role violation penalty. No agent can solve an incident alone — communication is the only way information crosses role boundaries.
+
+Six scenarios ship with the environment, ranging from a simple nginx crash to a scenario where the monitoring dashboard is actively misleading. The one we care most about is the third:
+
+> A wrong database password is causing `db_connector` to fail, which has cascaded into `app_server` and `load_balancer`. Monitoring is showing Redis memory at 72% with a critical alert. Redis is actually fine. The Redis alert is a stale cached metric from an earlier spike.
+
+Triage sees the Redis alert loudly and escalates. Diagnosis has to check Redis, confirm it's healthy, and push back: *Redis is not the issue. The password in /etc/app/database.yml is wrong.* That sentence — agent A telling agent B that agent B is wrong, with evidence — is the thing we're training. We added a dedicated milestone for it (`diagnosis_pushback_bonus`, worth 0.15) and it's the hardest one for an off-the-shelf LLM to hit.
+
+The whole environment is about 2,000 lines of Python plus tests. The FastAPI server exposes the standard OpenEnv shape (`/reset`, `/step`, `/state`, `/schema`) and the Gradio dashboard on the HF Space lets you step through incidents round by round.
+
+## Reward design
+
+One of the most useful pieces of advice in the hackathon materials was to use multiple independent reward functions rather than one big scalar. We ended up with four.
+
+**Milestone reward (weight 0.60)** — the team score from the environment's grader. Each task defines a chain of milestones ("triage mentioned nginx", "diagnosis read the right log file", "remediation restarted the service"), each with a credit value, and the grader accumulates credit as they're hit. Penalties subtract from the total: time pressure per round, no-op penalty per silent agent, communication-incorrect penalty if a message contains a factual claim that contradicts the simulated system. The result is clamped to the range (0.01, 0.99).
+
+**Format reward (weight 0.15)** — does the completion contain a structured `### TRIAGE / ### DIAGNOSIS / ### REMEDIATION` block with `COMMAND:`, `MESSAGE_TO:`, `MESSAGE:` fields? We score role-block presence in addition to keyword matches, which penalises models that skip a role.
+
+**Communication reward (weight 0.15)** — does the agent's message contain actionable content? Service names, PIDs, file paths, error keywords. Capped at five bonuses per episode to prevent message flooding.
+
+**Anti-hack reward (weight 0.10)** — a multiplicative gate. If the policy loops the same command three times in a row, or repeats it more than five times in an episode, or spams near-duplicate messages, the entire reward for that completion is zeroed out. This turned out to be the single most important design decision in the reward. Without it, GRPO finds loops in about 10 training steps.
+
+We also spent time on a **reward ablation study**: turn off one component at a time and re-run a fixed scripted policy across the same seeds to see what changes. Removing the communication bonus drops Task 2 by about 22%. Removing the milestone time-pressure penalty lets scores inflate on partial resolutions. Every component earns its weight.
+
+![Reward ablation](../../outputs/reward_ablation/ablation_overall.png)
+
+## Training: three runs that didn't work, and the one that did
+
+We trained Qwen2.5-7B-Instruct with GRPO + LoRA on a Hugging Face L40S job. The TRL rollout function calls the environment, collects 4 sampled completions per prompt, computes per-completion reward, and GRPO does group-relative advantage updates. This is the standard shape.
+
+The first three runs produced adapters that were *worse* than base. Not by much — composite delta of −0.017, then −0.001 — but worse. The fourth did better, and the story of how is more useful than the numbers.
+
+**Run 1 — rank-16 LoRA, 91 steps, strict format reward.** Composite delta −0.017. What went wrong: the training rollout only graded the diagnosis agent's round-0 completion. The model was being rewarded for a one-role, one-turn game while the evaluation was running all three roles for all rounds. Training was optimising a strictly different problem than evaluation measured.
+
+**Run 2 — same shape, procedural-only training set, 300 steps.** Composite delta −0.001. Same underlying issue. Slightly longer training; same shape mismatch.
+
+**Run 3 — multi-role structured completion, 300 steps.** Composite delta **+0.046**. We switched the prompt to ask the model to emit all three role blocks in a single structured completion at round 0, parsed that into a `MultiAgentAction`, and applied it to the episode. The reward now measures what the evaluation cares about. The task 2 score jumped from 0.048 to 0.188 — a 4× lift on a task where the base model was nearly at the floor.
+
+The progress wasn't from cleverer hyperparameters or more compute. It came from fixing the train-eval mismatch and then relaxing two verifiers that were rejecting semantically-correct answers. One example: the task 2 milestone for reading the OOM-killer log was matching the literal string `"OOM"` in syslog output. Our fixture syslog actually contained `"oom-killer"` (lowercase) and `"Out of memory"` — the exact wording you'd see on a real Linux system. A correct agent that read the right file, got the right output, and described the right thing would fail the milestone because of case sensitivity. Relaxing the check to accept `"oom"` case-insensitively raised the oracle score on task 2 from 0.20 to 0.95.
+
+The other verifier bug was a chicken-and-egg: one task 2 milestone required the diagnosis agent to have run `ps aux` AND sent a message containing the leaking PID *in the same round*. But you can't know the PID before running `ps`. We rewrote it to track whether `ps` had been run at any point in the episode.
+
+Every time we ran a training job, we also ran an **oracle audit** — a scripted "perfect knowledge" policy that knows the right answer for each task. If the oracle can't score above 0.85, the task is unreachable for RL regardless of how good the model is. That caught both of the above bugs before they swallowed more GPU time.
+
+## Head-to-head results
+
+Base Qwen 7B-Instruct versus the v3 adapter, 5 seeds per task, identical role prompts:
+
+| Task | Base | v3 Trained | Delta |
+|---|---:|---:|---:|
+| task1 (nginx restart) | 0.750 | 0.748 | −0.002 |
+| task2 (memory leak + red herring) | **0.048** | **0.188** | **+0.140** |
+| task3 (cascading + phantom alerts) | 0.010 | 0.010 | 0 |
+| **Composite** | **0.269** | **0.315** | **+0.046** |
+
+![Head-to-head](../../outputs/llm_eval/v3/head_to_head.png)
+
+How to read this. Task 1 is saturated — Qwen 7B already knows how to read an nginx error log and suggest a restart, and the heuristic co-agents handle the actual restart. 0.75 is essentially the ceiling for any model given our reward shape. Task 2 is where the training bites. The base model gets distracted by the CPU red herring; the trained model stays focused on the memory leak and names the right service. Task 3 is too hard for 300 gradient updates on a 7B. The phantom pushback behaviour isn't something the model has learned to do consistently — our verifier earlier required the literal substring `"not"` next to `"redis"`, which we've since relaxed to accept paraphrases, but the fundamental issue is that the base model almost never pushes back spontaneously and GRPO needs successful rollouts to learn from.
+
+## Generalisation
+
+Beyond the three scripted tasks, we run the trained behaviour against 60 procedurally-generated incidents across three difficulty bands — 20 seeds at easy, medium, and hard. Same fault primitives (`crash`, `memory_leak`, `cascade`, `auth_failure`, `disk_full`), random service selection, random phantom alerts. The procedural generator is aligned with the RLVE idea of keeping the environment near the model's capability frontier.
+
+| Difficulty | Baseline | Trained-style | Delta | Resolved |
+|---|---:|---:|---:|---:|
+| Easy (1 fault, 0 phantoms) | 0.01 | 0.47 | +0.46 | 100% |
+| Medium (2 faults, 2 phantoms) | 0.01 | 0.89 | +0.88 | 85% |
+| Hard (3 faults, 4 phantoms) | 0.01 | 0.98 | +0.97 | 75% |
+
+![Generalisation](../../outputs/generalization_eval/generalization_score.png)
+
+This chart uses an introspecting heuristic as a proxy for the trained policy rather than running the actual LLM across 60 seeds — running the full 7B on 60 episodes was out of our budget. What it shows is that the environment itself produces a large, consistent gap between a naive policy and a policy that reasons about services and phantoms. That gap is a signal available for RL to exploit.
+
+## What we're not claiming
+
+The simulated system is hand-crafted. The log messages, the service topology, the command parser — we wrote them. This isn't a replay of real Prometheus traces or PagerDuty events. A judge might reasonably ask whether training on this actually helps a real SRE LLM, and the honest answer is: we don't know yet.
+
+The 60-seed generalisation study is evidence the model isn't just memorising, but it's within-distribution generalisation. Real-world transfer is a separate question we haven't tested.
+
+The training curves are noisy. GRPO with 4 sampled completions per step produces bimodal rewards (correct naming scores 0.9+, wrong naming scores 0.01) and the mean rises only from 0.23 to 0.32 across our 300-step run. A larger sample size and more training would smooth this, but within hackathon budget we chose to ship what we have.
+
+## What worked, what didn't
+
+Things that worked:
+
+- Structured multi-role completion format. Fixing the train-eval mismatch was worth more than any hyperparameter tuning.
+- Reward decomposition. Being able to turn components off one at a time made debugging tractable.
+- Oracle audit scripts. Running a perfect-knowledge policy against every task before training caught two unreachable milestones.
+- Anti-hack as a multiplicative gate. GRPO finds loops quickly; the gate stops them cold.
+- The procedural task generator. Training on `procedural_easy/medium/hard` instead of the scripted tasks gave broader coverage and avoided overfitting.
+
+Things that didn't:
+
+- Our first reward function had an unnormalised time-pressure penalty that accidentally made hard tasks (fewer rounds = less penalty) score higher than easy tasks (more rounds = more penalty). We fixed it with a cap on total penalty as a fraction of available milestone credit, plus a solve bonus so a clean resolution always beats a partial one.
+- We spent about $2 on a training run that only trained the diagnosis agent's round-0 completion. That was the v1 adapter. Every other adapter we've trained since has beaten it.
+- Task 4, 5, and 6 were written but have been under-validated — the v2 run showed task 4 averaged reward 0.01, likely because of a fatal-check interaction we haven't fully debugged. We're ordering these below the first three in our submission.
+
+## Try it
+
+Live: [huggingface.co/spaces/brodie1of1/war-room](https://huggingface.co/spaces/brodie1of1/war-room)
+
+The Gradio dashboard lets you pick a task, watch agents coordinate round by round, inspect the belief state tracker as agents update their views, and inject your own panic message mid-episode to see how the team responds. Agent Mode runs the actual trained adapter live (via HF Inference when available).
+
+To reproduce evidence on your own machine, no GPU required:
+
+```bash
+git clone https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers.git
+cd Meta_Hackathon_ClaudeStalkers
+pip install -e .
+
+python scripts/oracle_audit.py
+python round2/war_room/reward_ablation.py
+python round2/war_room/eval_generalization.py
+pytest tests/ -v
+```
+
+To actually retrain the adapter on a GPU:
+
+```bash
+PYTHONPATH=. python round2/war_room/train_colab.py \
+    --episodes 100 \
+    --tasks procedural_easy procedural_medium procedural_hard \
+    --lenient-format --no-unsloth
+```
+
+Cost was roughly $1.50 on an L40S. A Colab notebook version is at `round2/war_room/train_colab.ipynb`.
+
+## What's next
+
+We're running two more training configurations (`v4` and `v5`) with rank-32 LoRA, lr bumped to 1e-5, and a broader task mix of 6–9 scenarios. If the numbers beat v3's +0.046 meaningfully we'll update this post. If not, v3 is what we ship, and we'll have been honest about the ceiling.
+
+The thing we most want to explore post-hackathon is ingesting real PagerDuty and Prometheus traces as replay fixtures. The simulation is the version of this problem we could build in 72 hours; the version that actually helps an SRE team lives one dataset away.
+
+Thanks to the OpenEnv team at Meta and Hugging Face for the framework and the compute.
+
+---
+
+Code: [github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers) · Adapter: [brodie1of1/war-room-grpo-adapter-v3](https://huggingface.co/brodie1of1/war-room-grpo-adapter-v3) · Space: [brodie1of1/war-room](https://huggingface.co/spaces/brodie1of1/war-room)

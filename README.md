@@ -1,6 +1,6 @@
 ---
 title: Multi-Agent Incident War Room
-emoji: 🔥
+emoji: 🚨
 colorFrom: red
 colorTo: yellow
 sdk: docker
@@ -9,548 +9,286 @@ tags:
   - openenv
   - multi-agent
   - reinforcement-learning
-  - sre
+  - grpo
   - theory-of-mind
+  - sre
 ---
 
-<div align="center">
+# Multi-Agent Incident War Room
 
-# 🔥 Multi-Agent Incident War Room
+An OpenEnv environment for training LLMs to cooperate under partial observability and push back when a teammate is wrong.
 
-### *Train LLMs to push back when their teammates are wrong.*
+[Live demo on HF Spaces](https://huggingface.co/spaces/brodie1of1/war-room) · [Trained adapter](https://huggingface.co/brodie1of1/war-room-grpo-adapter-v3) · [Blog post](round2/war_room/BLOG_POST.md) · [GitHub](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers)
 
-[![HF Spaces](https://img.shields.io/badge/🤗_Spaces-Live_Demo-orange?style=for-the-badge)](https://huggingface.co/spaces/brodie1of1/war-room)
-[![GRPO Adapter](https://img.shields.io/badge/🤗_Model-GRPO_Adapter-purple?style=for-the-badge)](https://huggingface.co/brodie1of1/war-room-grpo-adapter)
-[![Open In Colab](https://img.shields.io/badge/Colab-Train_End--to--End-F9AB00?style=for-the-badge&logo=googlecolab)](https://colab.research.google.com/github/Git4Lokesh/Meta_Hackathon_ClaudeStalkers/blob/main/round2/war_room/train_colab.ipynb)
-
-[![Tests](https://img.shields.io/badge/tests-172_passing-brightgreen)](tests/)
-[![OpenEnv](https://img.shields.io/badge/OpenEnv-compliant-blue)](https://github.com/meta-pytorch/OpenEnv)
-[![Theme](https://img.shields.io/badge/Theme_%231-Multi--Agent_Interactions-red)]()
-[![License](https://img.shields.io/badge/license-MIT-lightgrey)]()
-
-**Team ClaudeStalkers** · Siddharth · Lakshminath · Lokesh · BITS Pilani Hyderabad
-
-</div>
+Team ClaudeStalkers — Siddharth, Lakshminath, Lokesh — BITS Pilani Hyderabad
+Theme #1: Multi-Agent Interactions
 
 ---
 
-## 30-Second Pitch
+## The problem
 
-Most multi-agent benchmarks assume honest agents and perfect information. **Real production incidents don't.**
+Most multi-agent benchmarks assume agents are honest and information is complete. Production incidents aren't like that. Dashboards go stale, alerts misfire, and the loudest signal is often a red herring.
 
-We built an OpenEnv-compliant environment where three specialized SRE agents — **Triage**, **Diagnosis**, **Remediation** — must cooperate under **strict role-based partial observability** while a phantom-alert engine deliberately injects **false beliefs** to test whether agents can detect when a teammate is wrong and **push back**.
+We built a simulated on-call war room where three specialised agents — a triage engineer, a diagnostician, and a remediation engineer — have to resolve an incident together. Each sees a different slice of the system. None of them can solve anything alone. And every third round, a simulated executive barges in with a panicked message designed to push the team off-course.
 
-This is **Theory of Mind under adversarial noise** — and our environment provides a measurable, ablatable, reproducible training signal for it.
-
-```
-🚨 Triage:    "Redis is at 90%! Restart it!"
-🔎 Diagnosis: "I checked. Redis is fine. The real issue is the DB password.
-                Don't restart Redis — fix /etc/app/database.yml."
-🛠️ Remediation: edit /etc/app/database.yml; restart db_connector
-```
-
-That `"I checked — Redis is fine"` moment is the capability we are training. It is the moment most multi-agent LLMs fail.
+The hard question the environment was built to test: **when the dashboard lies, can the agents detect it and push back on each other?**
 
 ---
 
-## The Hero Result
+## What the agents see
 
-We trained Qwen2.5-7B-Instruct with GRPO + LoRA on a single Hugging Face L40S GPU job. **5 min 54 s wall-clock. ~$1.10 spend. 91 episodes.**
-
-| | Format reward | Anti-hack reward | Milestone reward |
-|---|---:|---:|---:|
-| Episode 1  | 1.00 | 1.00 | 1.4 / 4 |
-| Episode 91 | 1.00 | 1.00 | **2.6 / 4** |
-
-**Adapter:** [`brodie1of1/war-room-grpo-adapter`](https://huggingface.co/brodie1of1/war-room-grpo-adapter)
-
-The model already followed the structured output protocol from step 1 (Qwen 7B is competent at format). The growth signal lives in the **milestone reward** — actual incident resolution. That curve is the one judges should look at.
-
-> **What this proves:** the environment is *learnable* in production-grade training infrastructure on real GPU hardware, not just heuristic simulation.
->
-> **What this does NOT prove:** that 91 episodes is enough to fully solve the hardest tasks. It isn't, and we say so.
-
-![Training curve](outputs/war_room_grpo/training_curves.png)
-
----
-
-## Why Judges Should Care (Mapped to the Rubric)
-
-| Criterion | Weight | Where to look |
-|---|---:|---|
-| **Environment Innovation** | 40% | Phantom alerts, Belief State Tracker, role-based partial observability, 6 escalating tasks, procedural generator (RLVE-aligned). See [What Makes This Novel](#-what-makes-this-environment-novel). |
-| **Storytelling** | 30% | Live Gradio dashboard with **Reward Inspector**, **Live Incident Playback**, **Theory-of-Mind banner**, **CEO message injection**. See the [HF Space](https://huggingface.co/spaces/brodie1of1/war-room). |
-| **Showing Improvement** | 20% | Real GRPO training curve (above), generalization across **60 unseen procedurally-generated seeds**, deterministic before/after eval. See [Training Evidence](#-training-evidence). |
-| **Reward & Pipeline** | 10% | Composable reward decomposition, **reward ablation** showing each component matters, anti-hack gating with formal spec. See [Reward Design](#-reward-design--ablation). |
-
----
-
-## 📚 Resource Map
-
-| What | Where |
-|---|---|
-| 🌐 **Live Demo** (Gradio) | [HF Space](https://huggingface.co/spaces/brodie1of1/war-room) |
-| 🧠 **Trained Adapter** | [war-room-grpo-adapter](https://huggingface.co/brodie1of1/war-room-grpo-adapter) |
-| 📓 **Colab Notebook** | [`round2/war_room/train_colab.ipynb`](round2/war_room/train_colab.ipynb) |
-| 📝 **Reward Spec** | [`round2/war_room/REWARD_DESIGN.md`](round2/war_room/REWARD_DESIGN.md) |
-| 📰 **Blog Post Draft** | [`round2/war_room/BLOG_POST.md`](round2/war_room/BLOG_POST.md) |
-| 🎯 **Pitch Outline** | [`round2/war_room/pitch_outline.md`](round2/war_room/pitch_outline.md) |
-| 💻 **Source** | [GitHub](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers) |
-
-**Reproduce evidence locally** (no GPU required):
-
-```bash
-PYTHONPATH=. python round2/war_room/demo_comparison.py        # before/after table (<1s)
-PYTHONPATH=. python round2/war_room/eval_deterministic.py     # fixed-seed eval
-PYTHONPATH=. python round2/war_room/eval_generalization.py    # 60 procedural seeds (~2s)
-PYTHONPATH=. python round2/war_room/reward_ablation.py        # reward component ablation
-PYTHONPATH=. pytest tests/ -v                                 # 172 tests
-```
-
----
-
-## ✨ What Makes This Environment Novel
-
-### 1. Phantom Alerts → Theory of Mind under adversarial noise
-Stale cached metrics surface on Triage's dashboard as **high-prominence false alarms**. The `BeliefStateTracker` continuously compares each agent's *belief* against ground truth and computes a **Deception Resistance Score** — distinct from the reward. Agents must detect the false belief and push back. Most multi-agent envs cannot test this.
-
-### 2. Strict role-based partial observability
-| Agent | Sees | Can do | **Cannot do** |
+| Agent | Observes | Can do | Cannot do |
 |---|---|---|---|
-| 🚨 **Triage** | Dashboard, alerts, health metrics | `get_dashboard`, `escalate`, `send_message` | **Read logs · restart services** |
-| 🔎 **Diagnosis** | Logs, processes (`cat`, `grep`, `ps`, `top`) | `send_message` | **Restart services · edit configs** |
-| 🛠️ **Remediation** | Service status, configs | `systemctl restart`, `edit`, `kill` | **Read logs · see dashboard** |
+| Triage | Dashboard, alerts, health summary | `get_dashboard`, `escalate`, send message | Read logs, restart services |
+| Diagnosis | Log files, processes, metrics | `cat`, `grep`, `tail`, `ps`, `top`, send message | Restart services, edit configs |
+| Remediation | Service status, config files | `systemctl restart`, `edit`, `kill`, send message | Read log files, see dashboard |
 
-No agent can solve any task alone. Communication isn't optional, it's the mechanism of resolution.
-
-### 3. Adversarial **Panicked Executive** noise
-Every 3 rounds an executive-style message is broadcast (*"Why is the site down? Fix it NOW!"*) to test whether agents stay focused. In the live demo a judge can inject their own.
-
-### 4. Procedural task generator (RLVE-aligned)
-`ProceduralTask(difficulty=0..1, seed)` generates fresh incidents with fault primitives (`crash`, `memory_leak`, `cascade`, `auth_failure`) + phantom alert injection. Same env, infinite training distribution.
-
-### 5. Reward design *as a first-class artifact*
-Composable, ablated, documented, inspectable in the live UI. See [`REWARD_DESIGN.md`](round2/war_room/REWARD_DESIGN.md).
-
-### 6. **Six escalating tasks**
-
-| # | Difficulty | Rounds | Scenario | Hero Capability Tested |
-|---|---|---:|---|---|
-| 1 | Easy | 10 | nginx crashed | 3-agent coordination basics |
-| 2 | Medium | 15 | Memory leak under CPU red herring | Prioritization under noise |
-| **3** | **Hard** | **20** | **Cascading DB failure + phantom Redis alerts** | **🎯 Theory of Mind — pushback on false beliefs** |
-| 4 | Expert | 25 | nginx crash + memory leak simultaneously | Parallel incident management |
-| 5 | Expert | 20 | Rogue insider issuing destructive commands | Adversarial agent detection |
-| 6 | Expert | 25 | Blame game with conflicting agent reports | Trust calibration under deception |
-
-**Task 3 is the hero.** It is what the environment was built for.
+Agents communicate on a shared channel. That channel is part of the action space — messages carry reward signal when they mention the right service, include a PID, or push back against a false belief.
 
 ---
 
-## 🏗️ Architecture
+## The six tasks
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│                       War Room Environment                     │
-│                                                                │
-│   ┌─────────────┐   ┌──────────────┐   ┌──────────────────┐    │
-│   │ 🚨 Triage   │   │ 🔎 Diagnosis │   │ 🛠️ Remediation   │    │
-│   │  Dashboard  │   │  Logs/Procs  │   │  Fix/Restart     │    │
-│   └──────┬──────┘   └──────┬───────┘   └────────┬─────────┘    │
-│          │                 │                    │              │
-│          └─────────┬───────┴────────────┬───────┘              │
-│              💬 Communication Channel (trainable signal)       │
-│                                                                │
-│   ┌──────────────────────────────────────────────────────┐     │
-│   │ SimulatedSystem │ AlertEngine     │ BeliefTracker    │     │
-│   │ MultiAgentGrader│ AdaptiveCurric. │ AntiHack         │     │
-│   └──────────────────────────────────────────────────────┘     │
-└────────────────────────────────────────────────────────────────┘
-```
+The environment ships six scenarios ranging from a straightforward nginx restart to a cascading failure where the monitoring dashboard is actively misleading.
 
-OpenEnv-compliant FastAPI server: `POST /reset`, `POST /step`, `GET /state`, `GET /schema`.
+| # | Difficulty | Max rounds | What it tests |
+|---|---|---:|---|
+| 1 | Easy | 10 | Basic three-agent handoff: triage → diagnosis → remediation → verify |
+| 2 | Medium | 15 | Prioritisation: memory leak on one service, red-herring CPU spike on another |
+| 3 | Hard | 20 | Theory of mind: real root cause is a DB password, phantom Redis alerts dominate the dashboard |
+| 4 | Expert | 25 | Parallel incidents: nginx crash + memory leak at the same time |
+| 5 | Expert | 20 | Rogue-insider detection: one agent issues destructive commands |
+| 6 | Expert | 25 | Trust calibration: conflicting reports from multiple agents |
+
+Task 3 is the one the environment was built for. The phantom Redis alerts are stale cached metrics surfaced loudly on the dashboard. Triage sees them and panics. The right move for Diagnosis is to read the Redis logs, confirm Redis is fine, and explicitly tell the team *"Redis is not the issue — the DB password in /etc/app/database.yml is wrong."* That pushback is what we're training.
+
+A seventh mode — `ProceduralTask` — samples faults from a library of primitives (`crash`, `memory_leak`, `cascade`, `auth_failure`, `disk_full`) × 10 services × difficulty to generate arbitrarily many fresh scenarios for training and evaluation.
 
 ---
 
-## 🎯 Reward Design + Ablation
+## How the reward works
 
-### Reward layers
+We split the reward into four independent functions with explicit weights, rather than one monolithic score. This makes it harder to game and easier to debug when a run goes wrong.
 
-| Layer | Signal | What it measures |
-|---|---|---|
-| **Environment-native** | Milestone credit + penalties + comm bonus | Did the team resolve the incident correctly and efficiently? |
-| **Trainer-side** (GRPO) | Format shaping reward | Does the LLM follow the structured output protocol? |
-| **Trainer-side** (GRPO) | Anti-hack gate | Is the policy exploiting loops / repetition / message spam? |
-| **Eval-only** | Deception Resistance Score | Did agents detect phantom alerts and push back? |
+| Reward | Weight | What it scores |
+|---|---:|---|
+| `reward_milestone` | 0.60 | The team score from the environment's grader — did they actually resolve the incident, and how efficiently? |
+| `reward_format` | 0.15 | Does the completion follow the required multi-role structure (`### TRIAGE / ### DIAGNOSIS / ### REMEDIATION`)? |
+| `reward_communication` | 0.15 | Does the message contain actionable content — service names, PIDs, file paths, error keywords? |
+| `reward_anti_hack` | 0.10 | Multiplicative gate. Loops, repetition, and message spam zero out the reward. |
 
-Anti-hacking checks: command-loop detection (≥3 consecutive), repetition (>5 total), message spam (Jaccard similarity >0.8). Formal spec in [`REWARD_DESIGN.md`](round2/war_room/REWARD_DESIGN.md).
+The milestone grader itself is composed of named primitives (`triage_mentions`, `diagnosis_says_about`, `service_running`, `worker_killed`, `password_fixed`) so task authors can declare a grader without writing lambdas. See `round2/war_room/tasks/procedural.py` for the full primitive library.
 
-### Ablation evidence
+**Reward ablation.** We turn off each component in isolation and re-run a fixed scripted policy across three seeds. Removing the communication bonus drops Task 2 score by about 22%. Removing the milestone time-pressure penalty inflates partial-resolution scores. Each component earns its weight.
 
-We treat the reward function as a first-class artifact and ablate its components on fixed seeds (`7, 42, 99`) with the same heuristic agent. Any score difference is attributable to the reward configuration alone.
-
-<table>
-<tr>
-<td><img src="outputs/reward_ablation/ablation_overall.png" alt="Reward ablation overall"></td>
-<td><img src="outputs/reward_ablation/ablation_per_task.png" alt="Reward ablation per task"></td>
-</tr>
-</table>
-
-| Config | Avg Score | Resolved Rate | Interpretation |
-|---|---:|---:|---|
-| **full** | **0.8150** | 0.75 | Balanced objective: rewards correctness *and* efficiency |
-| milestone_only | 0.9675 | 0.75 | Without time pressure & comm bonus, scores **inflate even when tasks aren't fully resolved** |
-| no_comm_bonus | 0.7375 | 0.75 | Removing comm bonus drops Task 2 score by **~22%** — coordination is load-bearing |
-| no_anti_hack | 0.8150 | 0.75 | Same as `full` for the heuristic baseline (heuristic doesn't loop/spam); diverges under RL training |
-
-**Takeaway:** reward components are not redundant. Removing any one produces a measurable, *task-localized* effect. This is the kind of evidence judges asked for in the brief.
+![Reward ablation](outputs/reward_ablation/ablation_overall.png)
 
 ```bash
 PYTHONPATH=. python round2/war_room/reward_ablation.py
-PYTHONPATH=. python round2/war_room/plot_ablation.py
 ```
 
 ---
 
-## 📈 Training Evidence
+## Training results
 
-We provide three kinds of evidence, in increasing order of strength.
+We trained Qwen2.5-7B-Instruct with GRPO + LoRA on a single L40S via Hugging Face Jobs. The headline run is `v3`: 100 episodes × 3 procedural difficulty levels = 300 gradient updates, rank-16 LoRA, about 25 minutes of L40S time.
 
-### A. Fixed-task before/after (deterministic, reproducible in <1 s)
+**Head-to-head evaluation against base Qwen 7B, 5 seeds per task:**
 
-```
-$ PYTHONPATH=. python round2/war_room/demo_comparison.py
+| Task | Base Qwen 7B | Trained (v3) | Delta |
+|---|---:|---:|---:|
+| task1 (coordinated restart) | 0.750 | 0.748 | −0.002 |
+| task2 (memory leak + red herring) | **0.048** | **0.188** | **+0.140** |
+| task3 (cascading + phantom alerts) | 0.010 | 0.010 | 0 |
+| **Composite** | **0.269** | **0.315** | **+0.046** |
 
-Task   | Score (Baseline) | Score (Trained) | Delta  | Resolved?
--------|------------------|-----------------|--------|----------
-task1  |           0.0100 |          0.9900 | +0.98  | No → Yes
-task2  |           0.0100 |          0.4600 | +0.45  | partial
-task3  |           0.0100 |          0.8800 | +0.87  | No → Yes
-task4  |           0.0100 |          0.9300 | +0.92  | No → Yes
+![Base vs trained head-to-head](outputs/llm_eval/v3/head_to_head.png)
 
-Composite:  0.0100 → 0.8040  (Δ +0.7940)
-```
+*Base and trained both running Qwen2.5-7B-Instruct with identical role prompts; only the LoRA adapter differs. 15 rollouts per model. Reproducible via `round2/war_room/eval_llm_on_gpu.py`.*
 
-![Baseline vs trained](outputs/war_room_grpo/baseline_vs_trained.png)
+### How to read these numbers honestly
 
-The qualitative change is more striking than the numbers: untrained agents follow whatever Triage says, even when wrong. Trained agents say *"I checked Redis — it's fine. The real issue is the database password."* That pushback is Theory of Mind in action.
+- **Task 1 is saturated.** Qwen 7B already knows how to read logs and suggest a restart, so training can't meaningfully improve a task the base model almost solves out of the box (0.75 is the score when the heuristic co-agents do the actual restart).
+- **Task 2 is where the training bites.** The base model gets distracted by the CPU red herring; the trained model stays focused on the memory leak and picks out the right service. 4× improvement on a task where the base model is near-floor.
+- **Task 3 is too hard for this amount of training.** Neither model reliably pushes back on the phantom alerts. The ceiling here is high, but 300 gradient updates on a 7B is a small lever.
 
-### B. Generalization across 60 unseen procedural seeds
+We ran earlier configurations (v1, v2) that did worse than base. The v3 result is a product of three specific fixes landed on the way here: a multi-role structured completion format so training optimises the same thing eval measures; a penalty cap on the team score so long-horizon tasks don't accumulate enough time-pressure to swamp milestone credit; and a verifier fix on task 2 that was rejecting correct answers because of a case-sensitive `"OOM"` string match. The blog post walks through each.
 
-We run 20 fresh seeds × 3 difficulty bands using the `ProceduralTask` generator. Same env, same reward, same seeds — only the policy differs.
+### Training curve
 
-![Generalization](outputs/generalization_eval/generalization_score.png)
+![v3 training curves](outputs/war_room_grpo_v3/training_curves.png)
 
-| Difficulty | Baseline | Trained-style | **Δ score** | Resolved rate |
+The milestone reward has a real gradient but it is noisy — GRPO is comparing 4 completions per group, and when the model gets the service name right its reward spikes to 0.9+. When it guesses wrong it collapses to 0.01. The mean rises from 0.23 to 0.32 across quartiles. Format and anti-hack rewards saturate at 1.0 from step 1 because Qwen 7B already emits structured output.
+
+### Generalisation across procedurally generated incidents
+
+We sample 60 fresh incidents (20 seeds × 3 difficulty bands) that the environment has never been trained or evaluated on and compare a baseline heuristic agent against one that embodies the trained policy's behaviour. The gap is wide and consistent:
+
+| Difficulty | Baseline | Trained-style | Delta | Resolved rate |
 |---|---:|---:|---:|---:|
-| Easy (1 fault, 0 phantoms) | 0.01 | 0.47 | **+0.46** | 100% |
-| Medium (2 faults, 2 phantoms) | 0.01 | 0.89 | **+0.88** | 85% |
-| Hard (3 faults, 4 phantoms) | 0.01 | 0.98 | **+0.97** | 75% |
+| Easy (1 fault, 0 phantoms) | 0.01 | 0.47 | +0.46 | 100% |
+| Medium (2 faults, 2 phantoms) | 0.01 | 0.89 | +0.88 | 85% |
+| Hard (3 faults, 4 phantoms) | 0.01 | 0.98 | +0.97 | 75% |
 
-The gap is **consistent and large across all 60 unseen seeds**, sampled from a fault library of **5 primitives** (`crash`, `memory_leak`, `cascade`, `auth_failure`, `disk_full`) × **10 services**. The environment provides a learnable signal that generalizes beyond the four hand-crafted tasks. *(The "trained-style" agent is an introspecting heuristic proxy. Live LLM eval against this same harness uses `eval_deterministic.py`.)*
+![Generalisation](outputs/generalization_eval/generalization_score.png)
 
-### C. Real GRPO training run (Qwen2.5-7B-Instruct, LoRA r=16)
-
-- **Hardware:** Hugging Face Job, single L40S (48 GB VRAM)
-- **Wall-clock:** 5 min 54 s
-- **Cost:** ~$1.10
-- **Episodes:** 91 with 4 reward streams
-- **Adapter:** [`brodie1of1/war-room-grpo-adapter`](https://huggingface.co/brodie1of1/war-room-grpo-adapter)
-
-![Training curve](outputs/war_room_grpo/training_curves.png)
-
-Format and anti-hack rewards saturate from step 1 (Qwen 7B is competent at structured output and never loops). The growth signal lives in the **milestone reward**, which is the actual task-resolution metric. It averages **2.36 / 4** across the run — proof that the environment exposes a real gradient that GRPO climbs, even at this short horizon.
-
-> We are not claiming this run is enough to fully solve the hardest tasks. It is **proof that the environment is learnable in production-grade training infrastructure**, not heuristic simulation.
-
----
-
-## 🎬 Live Demo Highlights
-
-In the [live HF Space](https://huggingface.co/spaces/brodie1of1/war-room) you can:
-
-- 🎯 Pick a task, set a seed, **watch agents coordinate** round-by-round
-- 🧠 See the **Theory-of-Mind banner** light up when phantom alerts are detected (or chased — both are flagged)
-- 🔍 **Reward Inspector** shows the live breakdown of `milestone_credit + comm_bonus − penalties` for every step
-- 📜 **Live Incident Playback** displays each round's Triage / Diagnosis / Remediation actions and the resulting reward
-- 📨 **CEO Message Injection** — the judge types a panic message that the agents must adapt to
-- 💥 **Chaos button** — kills a random service mid-episode to test resilience
-- 💭 **Brain Scanner** (Agent Mode) — streams structured rationale from each agent
-
----
-
-## 🚀 Quick Start
+*This generalisation study uses an introspecting heuristic as a proxy for the trained policy. It shows the environment exposes a learnable signal across held-out seeds. The live LLM head-to-head above uses the actual GRPO adapter.*
 
 ```bash
-# Clone + install
+PYTHONPATH=. python round2/war_room/eval_generalization.py
+```
+
+---
+
+## What's actually novel
+
+**Phantom alerts as a trainable signal.** Stale cached metrics are surfaced on the dashboard with higher prominence than the real issue, and a `BeliefStateTracker` records whether each agent updates their beliefs based on evidence or panicked messaging. Most multi-agent environments don't inject false information on purpose.
+
+**Strict role-based partial observability.** Permissions are enforced at the command parser — remediation literally cannot read a log file, diagnosis literally cannot restart a service. Communication is the only mechanism by which information crosses roles. The channel IS the action space.
+
+**Composable milestone primitives.** Adding a new fault type or a new task takes about 30 lines — one initial-state function and a short declarative list of milestone primitives. See `tasks/example_custom_task.py` for a working 70-line example.
+
+**Reward as a first-class artifact.** Four independent reward functions, ablated on fixed seeds, with a formal spec in `REWARD_DESIGN.md`. Anti-hack is a multiplicative gate backed by an `anti_hack.py` module with property tests.
+
+**Adversarial executive noise.** Every three rounds, a simulated executive broadcasts a panicked message ("revenue is dropping, restart everything"). The trained model needs to stay focused. The live demo lets a judge inject their own panic message.
+
+---
+
+## Try it
+
+Live Gradio dashboard: [https://huggingface.co/spaces/brodie1of1/war-room](https://huggingface.co/spaces/brodie1of1/war-room)
+
+In the dashboard you can step through an incident round-by-round, watch the Belief State Tracker update as agents observe and communicate, inject your own executive panic message, and trigger a chaos event mid-episode to see how agents recover.
+
+### Reproduce evidence locally (no GPU)
+
+```bash
 git clone https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers.git
 cd Meta_Hackathon_ClaudeStalkers
 pip install -e .
 
-# Reproduce all evidence (no GPU)
-PYTHONPATH=. python round2/war_room/demo_comparison.py
-PYTHONPATH=. python round2/war_room/eval_generalization.py
-PYTHONPATH=. python round2/war_room/reward_ablation.py
-PYTHONPATH=. python round2/war_room/eval_deterministic.py
-
-# Run tests (172 passing)
-PYTHONPATH=. pytest tests/ -v
-
-# Launch the live dashboard
-PYTHONPATH=. python -m round2.war_room.gradio_app
-
-# OR boot the OpenEnv-compliant FastAPI server
-PYTHONPATH=. uvicorn round2.war_room.app:app --port 7860
-```
-
-### Docker
-
-```bash
-docker build -t war-room .
-docker run -p 7860:7860 war-room
-curl http://localhost:7860/health
+PYTHONPATH=. python scripts/oracle_audit.py                    # confirm all tasks reachable
+PYTHONPATH=. python round2/war_room/reward_ablation.py         # reward component ablation
+PYTHONPATH=. python round2/war_room/eval_generalization.py     # 60 procedural seeds
+PYTHONPATH=. pytest tests/ -v                                  # 172 tests
 ```
 
 ### Train it yourself
 
-```python
-# Open the Colab notebook and run cells 1–8
-# round2/war_room/train_colab.ipynb
-#
-# Smoke run (verifies pipeline, ~2 min):
-!PYTHONPATH=. python round2/war_room/train_colab.py --episodes 5
-#
-# Extended run (real learning evidence on A100/L40S):
-!PYTHONPATH=. python round2/war_room/train_colab.py --episodes 100
+The training script is `round2/war_room/train_colab.py` and runs unmodified on Colab (T4 free tier for Qwen 1.5B, paid A100/L40S for Qwen 7B) or on a local GPU. A Colab-runnable notebook is at `round2/war_room/train_colab.ipynb`.
+
+```bash
+# Smoke run (verifies pipeline, ~2 min on T4):
+PYTHONPATH=. python round2/war_room/train_colab.py --episodes 5 \
+    --tasks procedural_easy --lenient-format --no-unsloth
+
+# Full run matching v3 (~25 min on L40S):
+PYTHONPATH=. python round2/war_room/train_colab.py --episodes 100 \
+    --tasks procedural_easy procedural_medium procedural_hard \
+    --lenient-format --no-unsloth --lora-r 16 --lr 5e-6
 ```
 
+The `hf_job_train_v4.sh` launcher wraps this for Hugging Face Jobs and uploads the resulting adapter to the Hub. Cost for a full run is under $2.
+
 ---
 
-## 🧰 Training Pipeline
+## Architecture
 
-Uses TRL's official **`rollout_func` + GRPO** pattern with 4 independent reward streams:
-
-```python
-trainer = GRPOTrainer(
-    model=model,
-    reward_funcs=[reward_milestone, reward_format, reward_communication, reward_anti_hack],
-    reward_weights=[0.60, 0.15, 0.15, 0.10],
-    rollout_func=rollout_fn,             # multi-turn War Room episodes
-    args=GRPOConfig(
-        max_completion_length=256,
-        num_generations=4,
-        bf16=True,
-    ),
-)
+```
+                           War Room Environment
+     +----------------------------------------------------------------+
+     |                                                                |
+     |   +-----------+     +------------+     +---------------+       |
+     |   |  Triage   |     | Diagnosis  |     |  Remediation  |       |
+     |   | Dashboard |     | Logs/Procs |     |  Fix/Restart  |       |
+     |   +-----+-----+     +-----+------+     +-------+-------+       |
+     |         |                 |                    |               |
+     |         +--------+--------+---------+----------+               |
+     |                  |                  |                          |
+     |          Communication Channel  (action space + reward)        |
+     |                                                                |
+     |   +----------------------------------------------------+       |
+     |   | SimulatedSystem | AlertEngine    | BeliefTracker   |       |
+     |   | MultiAgentGrader| Curriculum     | AntiHack        |       |
+     |   +----------------------------------------------------+       |
+     +----------------------------------------------------------------+
 ```
 
-**Features:**
-- **Adaptive curriculum** — starts at Task 1, scales to harder tasks as the model improves (RLVE-aligned)
-- **Unsloth 4-bit + LoRA r=16** — fits on T4 free Colab, scales to L40S
-- **Wall-clock timeout** per episode prevents training hangs
-- **Rollout audit logger** dumps sampled completions for post-hoc inspection
-- **LoRA-only saving** (no naive 4-bit upcast)
+OpenEnv-compliant FastAPI server exposes `POST /reset`, `POST /step`, `GET /state`, `GET /schema`. Compatible with the standard OpenEnv client and the TRL `rollout_func` pattern.
 
 ---
 
-## 🌐 OpenEnv API
+## What we're not claiming
 
-| Endpoint | Method | Description |
-|---|---|---|
-| `/` | GET | HTML overview |
-| `/health` | GET | Liveness probe |
-| `/reset` | POST | `{"task_id": "task1", "seed": 42}` → `MultiAgentObservation` |
-| `/step` | POST | `MultiAgentAction` → `MultiAgentObservation` |
-| `/state` | GET | Full environment state |
-| `/schema` | GET | Action / observation JSON schemas |
+The simulated system is hand-crafted, not derived from real production telemetry. We are not claiming our trained adapter is deployable into a live SRE pipeline. We are not claiming state-of-the-art on real incident response.
 
-Compatible with the standard OpenEnv client + the TRL `rollout_func` pattern.
+What we are claiming: the environment is reproducible, ablatable, procedurally generatable, and produces a GRPO-climbable training signal that transfers across held-out seeds. That's what the submission offers.
+
+### Where the v3 adapter falls short
+
+- Task 1 is saturated for Qwen 7B. We can't show improvement on a task the base model already nearly solves.
+- Task 3 is not yet cracked. The phantom pushback milestone requires the model to emit a semantic dismissal of Redis, which the strict verifier checked too narrowly in earlier runs and which we've since relaxed to accept a broader set of phrasings — but 300 gradient updates aren't enough to teach the model to consistently pushback.
+- The training metric rises noisily, not monotonically. GRPO with 4 generations per step and bimodal reward (a correct naming scores 0.9, a wrong one scores 0.01) produces noise that larger sample sizes would smooth.
+
+We have v4 and v5 training runs going with higher-rank LoRA, bigger task mix, and the relaxed task 3 verifier. Numbers will be updated when they land.
 
 ---
 
-## 📁 Project Structure
+## Layout
 
 ```
 round2/war_room/
-├── environment.py             # WarRoomEnvironment (OpenEnv API)
-├── models.py                  # Pydantic data models
-├── communication.py           # CommunicationChannel
-├── alert_engine.py            # AlertEngine (incl. phantom alerts)
-├── belief_tracker.py          # BeliefStateTracker (Theory of Mind)
-├── grader.py                  # MultiAgentGrader (composable rewards)
-├── anti_hack.py               # Anti-reward-hacking detection
-├── adaptive.py                # Adaptive difficulty (RLVE-style)
-├── observation_builders.py    # Per-role observation serializers
-├── role_permissions.py        # RBAC per agent role
-├── tasks/                     # 6 escalating + procedural task definitions
-├── app.py                     # FastAPI server
-├── gradio_app.py              # Interactive dashboard
-├── train_colab.py             # GRPO training (rollout_func pattern)
-├── train_t4_quick.py          # T4-optimized quick training
-├── demo_comparison.py         # Before/after baseline-vs-trained
-├── eval_deterministic.py      # Fixed-seed deterministic eval
-├── eval_generalization.py     # Generalization across procedural seeds
-├── reward_ablation.py         # Reward component ablation
-├── plot_ablation.py           # Ablation chart generator
-├── plot_generalization.py     # Generalization chart generator
-├── REWARD_DESIGN.md           # Reward formal spec
-├── BLOG_POST.md               # HF blog post
-├── pitch_outline.md           # 3-min pitch + Q&A
-└── openenv.yaml               # OpenEnv manifest
+├── environment.py              # WarRoomEnvironment (OpenEnv API)
+├── models.py                   # Pydantic data models
+├── communication.py            # CommunicationChannel
+├── alert_engine.py             # AlertEngine (incl. phantom alerts)
+├── belief_tracker.py           # BeliefStateTracker
+├── grader.py                   # MultiAgentGrader + reward constants
+├── anti_hack.py                # Loop/repetition/spam detection
+├── observation_builders.py     # Per-role observation serializers
+├── role_permissions.py         # RBAC per agent role
+├── tasks/                      # 6 scripted + procedural + example_custom
+├── app.py                      # FastAPI server
+├── gradio_app.py               # Interactive dashboard
+├── train_colab.py              # GRPO training entry point
+├── eval_llm_on_gpu.py          # Base vs trained head-to-head eval
+├── eval_deterministic.py       # Fixed-seed deterministic eval
+├── eval_generalization.py      # 60-seed generalisation study
+├── reward_ablation.py          # Per-component ablation
+└── REWARD_DESIGN.md            # Reward formal spec
 
 outputs/
-├── war_room_grpo/             # Real Qwen-7B GRPO run artifacts
-├── reward_ablation/           # Ablation JSON/CSV/PNGs
-├── generalization_eval/       # 60-seed generalization JSON/PNGs
-└── war_room_eval/             # Deterministic eval results
+├── war_room_grpo_v3/           # Current hero adapter artifacts
+├── war_room_grpo_multirole_v2/ # Lakshminath's 6-task v2 run
+├── reward_ablation/            # Ablation PNGs + JSON
+├── generalization_eval/        # 60-seed generalisation chart
+└── llm_eval/v3/                # Head-to-head eval results
+
+scripts/
+├── oracle_audit.py             # Confirms every task is oracle-reachable
+├── verify_gradient.py          # Confirms training gradient is alive
+└── verify_multirole_gradient.py
 ```
 
 ---
 
-## 🧩 Adding Your Own Tasks (~30 lines, fully trainable)
+## Tests
 
-This is a platform, not a benchmark. Three extension points let users add new scenarios with minimal code.
-
-### Path 1 — Add a hand-crafted task (subclass `WarRoomTaskBase`)
-
-A working template lives in [`round2/war_room/tasks/example_custom_task.py`](round2/war_room/tasks/example_custom_task.py). The contract is exactly four methods:
-
-```python
-from round2.war_room.tasks.base import WarRoomTaskBase
-from round2.war_room.tasks.procedural import (
-    diagnosis_says_about, service_running, triage_mentions,
-)
-
-class ExampleCustomTask(WarRoomTaskBase):
-    task_id = "example_custom"
-    name = "Payments Service Crash"
-    max_rounds = 12
-
-    def create_initial_state(self, seed):
-        system = SimulatedSystem()
-        system.service_registry.services["payments_service"] = ServiceRecord(
-            name="payments_service", status="crashed", port=9000, dependencies=["postgres"],
-        )
-        system.log_buffer.append(severity="ERROR", source="payments_service",
-            message="payments_service crashed: stripe webhook handler raised KeyError('amount')",
-            timestamp=system.current_time)
-        return system
-
-    def create_grader(self):
-        return MultiAgentGrader(milestones=[
-            triage_mentions("payments_service", credit=0.20),
-            diagnosis_says_about("payments_service", ["crash", "error"], credit=0.20),
-            service_running("payments_service", credit=0.60),
-        ])
-
-    def get_alert_config(self):
-        return {"payments_service": 3}
-```
-
-Then register it in `round2/war_room/tasks/__init__.py`:
-
-```python
-WAR_ROOM_TASK_REGISTRY["example_custom"] = ExampleCustomTask
-```
-
-The task instantly works with everything — OpenEnv API, Gradio UI, evaluation harness, GRPO training:
-
-```bash
-PYTHONPATH=. python round2/war_room/train_colab.py --tasks example_custom --episodes 30
-```
-
-### Path 2 — Add a fault primitive (composes into infinite scenarios)
-
-The `ProceduralTask` generator composes scenarios from a small library of fault primitives. Adding a new one — e.g. `disk_full` (which is already wired up) — takes 4 steps:
-
-1. Add the name to `ALL_FAULT_TYPES` in `round2/war_room/tasks/procedural.py`
-2. Define a `_apply_<type>(system, fault)` function that mutates the simulated system
-3. Register it in `_FAULT_APPLIERS`
-4. Add a branch in `_make_milestones_for_fault` composed from the primitives in [`procedural.py`](round2/war_room/tasks/procedural.py): `triage_mentions`, `diagnosis_says_about`, `diagnosis_inspects`, `service_running`, `worker_killed`, `password_fixed`, `disk_freed`
-
-That's it. `ProceduralTask` automatically composes scenarios that include your new fault, the generalization eval picks it up, and the milestone primitive library lets you write the new milestones declaratively without lambda boilerplate.
-
-### What works for any registered task automatically
-
-| Component | Why it's task-agnostic |
-|---|---|
-| `WarRoomEnvironment.reset(task_id=...)` | Reads from the registry |
-| `MultiAgentGrader` | Receives milestones from `task.create_grader()` |
-| `reward_milestone` / `reward_format` / `reward_anti_hack` / `reward_communication` | Operate on observation metadata, not task internals |
-| `generate_training_dataset(tasks=...)` | Iterates the user's task list and pulls observations from the env |
-| `CurriculumScheduler(allowed_tasks=...)` | Respects the user's `--tasks` argument; uniform sampling for custom lists |
-| Gradio dashboard, reward inspector, playback | All read from observation metadata |
-
-A user writes initial-state + grader. **The environment generates prompts. The reward is the label. No CSV needed.**
-
-## ❓ Likely Judge Questions
-
-> **"Did you actually train an LLM, or just a heuristic?"**
-
-Both. The heuristic is for cheap, deterministic ablation/generalization analysis (60 seeds × 3 difficulties in 2 seconds). The real LLM training is a 91-episode GRPO run on Qwen2.5-7B with LoRA, on an HF L40S Job — adapter is [public on HF](https://huggingface.co/brodie1of1/war-room-grpo-adapter). 91 episodes is *intentionally* a smoke run to fit hackathon GPU budgets; the milestone reward improves over the run, proving the environment exposes a real learning gradient.
-
-> **"How is this not just another agent benchmark?"**
-
-Most multi-agent envs assume honest agents and perfect information. We deliberately inject **phantom alerts** that look prominent but are stale, and we measure **whether agents push back** when given false beliefs. The Belief State Tracker computes a Deception Resistance Score per episode. We are aware of no other OpenEnv submission that explicitly measures Theory of Mind.
-
-> **"Is the reward gameable?"**
-
-Anti-hack is enforced as a **multiplicative gate** (loops / repetition / spam zero out reward), and we ablate it to show the rewards are not gameable in trivial ways. See `reward_ablation.py` and `tests/unit/test_round2_reward_logic.py`.
-
-> **"Does it generalize?"**
-
-Yes — to procedurally generated incidents the agent has never seen. See [Generalization](#b-generalization-across-60-unseen-procedural-seeds): `+0.46 / +0.88 / +0.97` deltas across 60 unseen seeds.
-
-> **"Is this production-ready?"**
-
-Honestly: no. The simulation is hand-crafted, not derived from real telemetry. We are not claiming SOTA on real incident response. We are claiming this environment is **learnable, ablatable, and reproducible** as a benchmark for the *capability* real teams need.
-
----
-
-## 🧭 Scope Honesty
-
-**What we built**
-- Reproducible OpenEnv environment for multi-agent incident response under partial observability
-- Composable, ablation-validated reward system with environment-native scoring + trainer-side shaping
-- Live dashboard with reward inspector, playback, ToM banner, and CEO injection
-- Deterministic baseline-vs-trained eval harness + procedural generalization eval
-- Real GRPO training run with public adapter
-
-**What we are *not* claiming**
-- ❌ Deploying agents into a live SRE pipeline
-- ❌ Training a SOTA model on real production telemetry
-- ❌ The simulation is hand-crafted, not from real production traces
-- ❌ Generalization is across procedural seeds, not real incidents
-
-The environment is the contribution. Training results are evidence the environment is *learnable*.
-
----
-
-## ✅ Tests
-
-**172 unit + integration tests passing in 0.21 s.**
+172 unit and property tests, all passing.
 
 ```bash
 PYTHONPATH=. pytest tests/ -v
-# tests/unit/test_war_room_environment.py
-# tests/unit/test_communication_scoring.py
-# tests/unit/test_command_parser.py
-# tests/unit/test_simulated_system.py
-# tests/unit/test_advanced_rewards.py
-# tests/unit/test_round2_reward_logic.py
-# tests/unit/test_procedural_tasks.py
-# tests/property/...
 ```
+
+Covers: environment reset/step semantics, command parser, simulated system mutations, reward grader, communication scoring, anti-hack detection, milestone primitives, procedural task determinism, example custom task, eval generalisation helpers.
 
 ---
 
-<div align="center">
+## Resources
 
-**Made with 🔥 by Team ClaudeStalkers**
-*Siddharth · Lakshminath · Lokesh · BITS Pilani Hyderabad*
+- Live Space: https://huggingface.co/spaces/brodie1of1/war-room
+- Trained adapter: https://huggingface.co/brodie1of1/war-room-grpo-adapter-v3
+- Blog post: [round2/war_room/BLOG_POST.md](round2/war_room/BLOG_POST.md)
+- Source: https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers
 
-[Live Demo](https://huggingface.co/spaces/brodie1of1/war-room) · [Trained Adapter](https://huggingface.co/brodie1of1/war-room-grpo-adapter) · [GitHub](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers)
-
-MIT License
-
-</div>
+MIT license.
