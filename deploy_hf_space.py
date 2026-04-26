@@ -33,15 +33,32 @@ IGNORE_PATTERNS = [
     ".pytest_cache/**",
     ".venv/**",
     "*.egg-info/**",
+    # Adapter weights are huge — judges can pull from HF Hub adapter repos
     "outputs/war_room_grpo/adapter_model.safetensors",
     "outputs/war_room_grpo/checkpoint-*/**",
     "outputs/war_room_grpo/tokenizer.json",
     "outputs/war_room_grpo/vocab.json",
     "outputs/war_room_grpo/merges.txt",
+    "outputs/war_room_grpo_v*/adapter_model.safetensors",
+    "outputs/war_room_grpo_v*/tokenizer.json",
+    "outputs/war_room_grpo_v*/vocab.json",
+    "outputs/war_room_grpo_v*/merges.txt",
+    "outputs/war_room_grpo_v*/checkpoint-*/**",
+    "outputs/war_room_grpo_multirole_*/adapter_model.safetensors",
+    "outputs/war_room_grpo_multirole_*/tokenizer.json",
+    "outputs/war_room_grpo_multirole_*/vocab.json",
+    "outputs/war_room_grpo_multirole_*/merges.txt",
     "outputs/sft_dataset*.json",
     "outputs/war_room_sft/**",
+    # Local-only dirs
     "/tmp/**",
     ".kiro/**",
+    # HF Space doesn't need these launcher scripts
+    "hf_job_*.sh",
+    "pull_hf_artifacts.sh",
+    # Random downloaded/stale files
+    "profile_data_*.json",
+    "post_data_*.json",
 ]
 
 

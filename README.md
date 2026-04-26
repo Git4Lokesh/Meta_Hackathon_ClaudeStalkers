@@ -18,7 +18,7 @@ tags:
 
 An OpenEnv environment for training LLMs to cooperate under partial observability and push back when a teammate is wrong.
 
-[Live demo on HF Spaces](https://huggingface.co/spaces/brodie1of1/war-room) · [Trained adapter](https://huggingface.co/brodie1of1/war-room-grpo-adapter-v3) · [Blog post](round2/war_room/BLOG_POST.md) · [GitHub](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers)
+[Live demo on HF Spaces](https://huggingface.co/spaces/brodie1of1/war-room) · [Trained adapter](https://huggingface.co/brodie1of1/war-room-grpo-adapter-v3) · [Blog post](Blog.md) · [GitHub](https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers)
 
 Team ClaudeStalkers — Siddharth, Lakshminath, Lokesh — BITS Pilani Hyderabad
 Theme #1: Multi-Agent Interactions
@@ -288,7 +288,7 @@ Covers: environment reset/step semantics, command parser, simulated system mutat
 
 - Live Space: https://huggingface.co/spaces/brodie1of1/war-room
 - Trained adapter: https://huggingface.co/brodie1of1/war-room-grpo-adapter-v3
-- Blog post: [round2/war_room/BLOG_POST.md](round2/war_room/BLOG_POST.md)
+- Blog post: [Blog.md](Blog.md)
 - Source: https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers
 
 MIT license.

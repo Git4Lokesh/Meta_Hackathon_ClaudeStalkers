@@ -46,7 +46,7 @@ One of the most useful pieces of advice in the hackathon materials was to use mu
 
 We also spent time on a **reward ablation study**: turn off one component at a time and re-run a fixed scripted policy across the same seeds to see what changes. Removing the communication bonus drops Task 2 by about 22%. Removing the milestone time-pressure penalty lets scores inflate on partial resolutions. Every component earns its weight.
 
-![Reward ablation](../../outputs/reward_ablation/ablation_overall.png)
+![Reward ablation](outputs/reward_ablation/ablation_overall.png)
 
 ## Training: three runs that didn't work, and the one that did
 
@@ -77,7 +77,7 @@ Base Qwen 7B-Instruct versus the v3 adapter, 5 seeds per task, identical role pr
 | task3 (cascading + phantom alerts) | 0.010 | 0.010 | 0 |
 | **Composite** | **0.269** | **0.315** | **+0.046** |
 
-![Head-to-head](../../outputs/llm_eval/v3/head_to_head.png)
+![Head-to-head](outputs/llm_eval/v3/head_to_head.png)
 
 How to read this. Task 1 is saturated — Qwen 7B already knows how to read an nginx error log and suggest a restart, and the heuristic co-agents handle the actual restart. 0.75 is essentially the ceiling for any model given our reward shape. Task 2 is where the training bites. The base model gets distracted by the CPU red herring; the trained model stays focused on the memory leak and names the right service. Task 3 is too hard for 300 gradient updates on a 7B. The phantom pushback behaviour isn't something the model has learned to do consistently — our verifier earlier required the literal substring `"not"` next to `"redis"`, which we've since relaxed to accept paraphrases, but the fundamental issue is that the base model almost never pushes back spontaneously and GRPO needs successful rollouts to learn from.
 
@@ -91,7 +91,7 @@ Beyond the three scripted tasks, we run the trained behaviour against 60 procedu
 | Medium (2 faults, 2 phantoms) | 0.01 | 0.89 | +0.88 | 85% |
 | Hard (3 faults, 4 phantoms) | 0.01 | 0.98 | +0.97 | 75% |
 
-![Generalisation](../../outputs/generalization_eval/generalization_score.png)
+![Generalisation](outputs/generalization_eval/generalization_score.png)
 
 This chart uses an introspecting heuristic as a proxy for the trained policy rather than running the actual LLM across 60 seeds — running the full 7B on 60 episodes was out of our budget. What it shows is that the environment itself produces a large, consistent gap between a naive policy and a policy that reasons about services and phantoms. That gap is a signal available for RL to exploit.
 
