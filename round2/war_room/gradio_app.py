@@ -91,6 +91,48 @@ CUSTOM_CSS = """
     backdrop-filter: blur(6px);
 }
 
+/* Live-replay dashboard grid.
+   Problem we are solving: when the user presses Next, the chat updates
+   at the top but the status cards and plots are below the fold — they
+   have to scroll up and down to see what changed.
+   Solution: a 2-column grid inside the main War Room panel. Chat on the
+   left with its own internal scroll, status + plots stacked on the right.
+   On narrower viewports (< 1100px) the grid collapses to vertical flow. */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: minmax(420px, 2fr) 3fr;
+    gap: 16px;
+    align-items: stretch;
+}
+@media (max-width: 1100px) {
+    .dashboard-grid { grid-template-columns: 1fr; }
+}
+.dashboard-left, .dashboard-right {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0; /* allow grid children to shrink below content width */
+}
+.dashboard-right-plots {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+@media (max-width: 900px) {
+    .dashboard-right-plots { grid-template-columns: 1fr; }
+}
+/* Cap the status cards row so it doesn't push plots below the fold. */
+.dashboard-status-row {
+    max-height: 260px;
+    overflow-y: auto;
+}
+/* Cap the chat panel so it pairs visually with the status+plots column
+   instead of pushing everything else below the fold. */
+.chat-container-dashboard {
+    max-height: 520px;
+    overflow-y: auto;
+}
+
 /* Chat panel */
 .chat-container {
     background: #0d1117;
@@ -1353,38 +1395,43 @@ Each episode simulates a production incident. Three specialized agents — **Tri
                 status_text = gr.Textbox(label="Status", interactive=False, max_lines=1)
 
                 # ---- Main dashboard ----
-                # Clean vertical flow: chat at top, status cards in a row,
-                # plots in a row, deep-dive views hidden in an accordion.
-                # This prevents the old 4-column-stacked-widget overlap.
+                # Live-replay layout: chat on the left, status cards and
+                # plots stacked on the right. Both panels are simultaneously
+                # visible on a 1080p+ viewport so pressing Next updates
+                # chat + status + plots without the user needing to scroll.
+                # Collapses to vertical flow on narrow viewports.
+                with gr.Row(elem_classes=["dashboard-grid"]):
+                    # Left column: live agent chat
+                    with gr.Column(elem_classes=["dashboard-left"]):
+                        gr.Markdown("### Agent chat")
+                        chat_display = gr.HTML(
+                            label="Agent Chat",
+                            elem_classes=["chat-container", "chat-container-dashboard"],
+                        )
 
-                # Row 1: Live agent chat (full width, its own scroll container)
-                chat_display = gr.HTML(
-                    label="Agent Chat",
-                    elem_classes=["chat-container"],
-                )
+                    # Right column: status cards on top, plots below
+                    with gr.Column(elem_classes=["dashboard-right"]):
+                        gr.Markdown("### Incident status")
+                        with gr.Row(elem_classes=["dashboard-status-row"], equal_height=False):
+                            with gr.Column(scale=1, min_width=200):
+                                gr.Markdown("**Services**")
+                                service_display = gr.HTML()
+                            with gr.Column(scale=1, min_width=200):
+                                gr.Markdown("**Milestones hit**")
+                                milestone_display = gr.HTML()
+                            with gr.Column(scale=1, min_width=200):
+                                gr.Markdown("**🧠 Theory of Mind tracker**")
+                                belief_display = gr.HTML()
 
-                # Row 2: Status cards — services, milestones, belief tracker
-                gr.Markdown("### Incident status")
-                with gr.Row(equal_height=False):
-                    with gr.Column(scale=1, min_width=240):
-                        gr.Markdown("**Services**")
-                        service_display = gr.HTML()
-                    with gr.Column(scale=1, min_width=240):
-                        gr.Markdown("**Milestones hit**")
-                        milestone_display = gr.HTML()
-                    with gr.Column(scale=1, min_width=240):
-                        gr.Markdown("**🧠 Theory of Mind tracker**")
-                        belief_display = gr.HTML()
+                        gr.Markdown("### Training signal")
+                        with gr.Row(elem_classes=["dashboard-right-plots"], equal_height=False):
+                            with gr.Column(scale=1):
+                                comm_flow = gr.Plot(label="Communication flow")
+                            with gr.Column(scale=1):
+                                reward_plot = gr.Plot(label="Reward progress")
 
-                # Row 3: Plots — communication flow + reward progress
-                gr.Markdown("### Training signal")
-                with gr.Row(equal_height=False):
-                    with gr.Column(scale=1):
-                        comm_flow = gr.Plot(label="Communication flow")
-                    with gr.Column(scale=1):
-                        reward_plot = gr.Plot(label="Reward progress")
-
-                # Row 4: Timeline (wide, single plot)
+                # Timeline plot sits below the dashboard grid — wider context
+                # after the live-replay viewport is filled.
                 comm_timeline = gr.Plot(label="Communication timeline")
 
                 # Deep-dive: brain scanner, reward inspector, playback (hidden by default)

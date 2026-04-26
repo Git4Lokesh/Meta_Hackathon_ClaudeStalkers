@@ -4,6 +4,22 @@
 
 Team ClaudeStalkers (Siddharth, Lakshminath, Lokesh), BITS Pilani Hyderabad.
 
+> **Note on length.** This blog runs ~2.8k words because it embeds verbatim base-vs-trained rollout excerpts in the "What the model actually learned" section. The raw trace is the point of the blog — paraphrasing would lose the story. If you only have two minutes, read the **30-second teaser** below, then jump to [that section](#what-the-model-actually-learned--a-worked-example).
+
+---
+
+## 30-second teaser: what the model learned to stop doing
+
+Task 2 is a memory leak on `data_processor` with a noisy CPU spike on `api_gateway` designed to distract. Five rounds into the incident, the base Qwen 7B model has drifted onto the CPU red herring:
+
+> `[triage] get_health_summary → "Current CPU usage is high at 146.7%. Investigating api_gateway as it's consuming 88.0% CPU."`
+
+Our trained adapter, same seed, same round, keeps remediation pointed at the real fault:
+
+> `[remediation] systemctl restart data_processor → "Restarting data_processor to ensure it's communicating properly with postgres."`
+
+Same model family (Qwen 2.5-7B-Instruct), same role prompts, only the LoRA adapter differs. Task 2 score: base 0.048 → trained 0.188. **4× lift on the one task in the scripted eval where the base model is near-floor, because the trained model stops chasing the loud signal.** Full verbatim rollout in the [worked-example section](#what-the-model-actually-learned--a-worked-example).
+
 ---
 
 Anyone who has been on-call at 3 AM knows the loneliest part isn't the alert. It's the moment someone in Slack says with full confidence "it's the database," and the logs quietly suggest it isn't, and you have to decide whether to trust the loud voice or the quiet evidence.
@@ -48,6 +64,8 @@ We also spent time on a **reward ablation study**: turn off one component at a t
 
 ![Reward ablation](outputs/reward_ablation/ablation_overall.png)
 
+*Average score when each reward component is disabled in turn. No single component dominates — removing any of them measurably hurts the overall score.*
+
 ## Training: three runs that didn't work, and the one that did
 
 We trained Qwen2.5-7B-Instruct with GRPO + LoRA on a Hugging Face L40S job. The TRL rollout function calls the environment, collects 4 sampled completions per prompt, computes per-completion reward, and GRPO does group-relative advantage updates. This is the standard shape.
@@ -78,6 +96,8 @@ Base Qwen 7B-Instruct versus the v3 adapter, 5 seeds per task, identical role pr
 | **Composite** | **0.269** | **0.315** | **+0.046** |
 
 ![Head-to-head](outputs/llm_eval/v3/head_to_head.png)
+
+*Average team score per task, base Qwen 7B versus our v3 LoRA adapter. 5 seeds per bar. The task 2 column is where the training shows up.*
 
 How to read this. Task 1 is saturated — Qwen 7B already knows how to read an nginx error log and suggest a restart, and the heuristic co-agents handle the actual restart. 0.75 is essentially the ceiling for any model given our reward shape. Task 2 is where the training bites. The base model gets distracted by the CPU red herring; the trained model stays focused on the memory leak and names the right service. Task 3 is too hard for 300 gradient updates on a 7B. The phantom pushback behaviour isn't something the model has learned to do consistently — our verifier earlier required the literal substring `"not"` next to `"redis"`, which we've since relaxed to accept paraphrases, but the fundamental issue is that the base model almost never pushes back spontaneously and GRPO needs successful rollouts to learn from.
 
@@ -149,6 +169,8 @@ Beyond the three scripted tasks, we run the trained behaviour against 60 procedu
 | Hard (3 faults, 4 phantoms) | 0.01 | 0.98 | +0.97 | 75% |
 
 ![Generalisation](outputs/generalization_eval/generalization_score.png)
+
+*Baseline policy vs a trained-style policy across 60 procedurally-generated incidents (20 seeds × 3 difficulty bands). Same environment, same fault library, never-before-seen seeds.*
 
 This chart uses an introspecting heuristic as a proxy for the trained policy rather than running the actual LLM across 60 seeds — running the full 7B on 60 episodes was out of our budget. What it shows is that the environment itself produces a large, consistent gap between a naive policy and a policy that reasons about services and phantoms. That gap is a signal available for RL to exploit.
 

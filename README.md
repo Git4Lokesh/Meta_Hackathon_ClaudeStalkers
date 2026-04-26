@@ -29,6 +29,10 @@ _**Our trained adapter beats base Qwen 7B by +0.046 composite score (4× lift on
 Team ClaudeStalkers — Siddharth, Lakshminath, Lokesh — BITS Pilani Hyderabad
 Theme #1: Multi-Agent Interactions
 
+**What the agent sees, does, and gets rewarded for.** Three role-gated agents share a partially observable system: triage watches the dashboard, diagnosis reads logs, remediation restarts services. No agent can solve anything alone. Communication is part of the action space. The grader rewards milestones (did the right service get restarted? did diagnosis push back on phantom alerts?) and penalises loops, time pressure, and factual contradictions.
+
+**Why it matters.** SRE is the real-world version of multi-agent reasoning under deception — monitoring lies, dashboards go stale, and the loudest signal is often wrong. If an LLM can learn to push back on a panicked teammate using quiet evidence, the same skill generalises to any domain where partial information and coordination matter.
+
 ---
 
 ## For the judge: how to evaluate this submission in 10 minutes
@@ -46,7 +50,7 @@ Theme #1: Multi-Agent Interactions
 |---|---:|---|
 | **Environment Innovation** | 40% | [What's actually novel](#whats-actually-novel) — phantom alerts, role-based partial observability, procedural task generator, composable reward primitives. |
 | **Storytelling** | 30% | [Live demo](https://huggingface.co/spaces/brodie1of1/war-room) with belief-state tracker + executive-panic injection, plus [Blog post](Blog.md) that walks through what broke and what fixed it. |
-| **Improvement** | 20% | Head-to-head chart above + [60-seed generalisation study](outputs/generalization_eval/generalization_score.png) + [reward ablation](outputs/reward_ablation/ablation_overall.png) + [full run log](outputs/RESULTS.md) with v1→v5-SFT history. |
+| **Improvement** | 20% | Head-to-head chart above + [60-seed generalisation study](outputs/generalization_eval/generalization_score.png) + [reward ablation](outputs/reward_ablation/ablation_overall.png) + [full run log](outputs/RESULTS.md) with v1→v6-SFT history. |
 | **Reward & Pipeline** | 10% | Four decomposed reward functions with ablation evidence, anti-hack multiplicative gate, oracle-audited verifiers, SFT warm-up + GRPO training pipeline. |
 
 ---
@@ -109,6 +113,8 @@ The milestone grader itself is composed of named primitives (`triage_mentions`, 
 
 ![Reward ablation](outputs/reward_ablation/ablation_overall.png)
 
+*Average score with each reward component removed. Removing milestone (−0.60 of weight) collapses training; removing communication or anti-hack each costs measurable ground. Every component earns its weight.*
+
 ```bash
 PYTHONPATH=. python round2/war_room/reward_ablation.py
 ```
@@ -143,6 +149,8 @@ We ran earlier configurations (v1, v2) that did worse than base. The v3 result i
 ### Training curve
 
 ![v3 training curves](outputs/war_room_grpo_v3/training_curves.png)
+
+*Team reward, per-reward component breakdown, and milestones achieved across the 100-episode v3 run. Mean climbs from 0.23 to 0.32; format and anti-hack saturate at 1.0 so the learning signal concentrates on milestone + communication.*
 
 The milestone reward has a real gradient but it is noisy — GRPO is comparing 4 completions per group, and when the model gets the service name right its reward spikes to 0.9+. When it guesses wrong it collapses to 0.01. The mean rises from 0.23 to 0.32 across quartiles. Format and anti-hack rewards saturate at 1.0 from step 1 because Qwen 7B already emits structured output.
 
@@ -195,7 +203,7 @@ Each design decision above wasn't aesthetic. It was made because we needed it to
 
 The environment pushed training forward. Every version gets better because we can see what's broken.
 
-See [outputs/RESULTS.md](outputs/RESULTS.md) for the full v1→v5-SFT run log with per-run metrics.
+See [outputs/RESULTS.md](outputs/RESULTS.md) for the full v1→v6-SFT run log with per-run metrics.
 
 ---
 

@@ -13,7 +13,9 @@ Composite score = average of task1/task2/task3 scripted-task eval across 5 seeds
 | v3 | **Multirole** structured completion | 300 | **+0.046** | **+0.140 (4×)** | Fixed train-eval alignment — first positive |
 | multirole_v2 (Lakshminath) | Multirole, 6-task mix | 800 | **+0.021** | +0.062 | More tasks = more breadth but slightly lower transfer |
 | v4 (brodie1of1) | Multirole + reward surgery, rank 32 | 800 | **−0.007** | −0.005 | Training metrics better than multirole_v2 (mean 0.338 vs 0.263, task4 unstuck). But transfer to scripted eval was worse — broader 6-task mix seems to hurt out-of-distribution generalisation compared to v3's procedural-only curriculum. |
-| **v5-SFT** (brodie1of1) | **SFT warm-up + GRPO** with relaxed task3 | ~300 | _eval in flight_ | _pending_ | SFT on 355 oracle examples lands `eval_loss=0.024`; task3 pushback should fire for the first time because SFT teaches "Redis is NOT the real issue" |
+| v5-SFT (brodie1of1) | SFT warm-up + GRPO, rank 16→32 | 100 | **regressed (bug)** | n/a | **Failed silently due to PEFT key-naming bug.** SFT adapter trained fine (`eval_loss=0.024`) but `load_state_dict(strict=False)` in the GRPO loader dropped all 392 SFT keys because PEFT saves as `…lora_A.weight` but the live `PeftModel` expects `…lora_A.default.weight` (adapter-name segment). Training ran on the base model with no SFT warm-start. Task2/task3 stuck at 0.01. Fix landed in commit `55e71c8`: key rename on load + rank upcast script. |
+| v6-SFT (brodie1of1, in flight) | SFT + GRPO, fixed loader, rank 32, lr 1e-5 | 200 | _training_ | _training_ | Backup run. Same pipeline as Lakshminath's but on brodie1of1 account. 5h timeout. |
+| **v6-SFT (GeminiHugger, in flight)** | SFT + GRPO, fixed loader, rank 32 | _see poll log_ | _training_ | _training_ | **Primary candidate.** Early training signal at epoch 0.26: avg reward 0.355, good% 50% (vs v5 lifetime 0.195 / 21%). If the eval transfers, this becomes the new hero. |
 
 ## Current best: `v3` on the public head-to-head eval
 
@@ -78,14 +80,29 @@ See `outputs/llm_eval/v3/` for the full head-to-head chart, `results.json` (per-
   - task3 still 0.01 — verifier relax landed _after_ v4's training code was frozen.
 - Head-to-head eval: in flight (job 69ed889ed2c8bd8662bcf088).
 
-### v5-SFT — SFT warm-up then GRPO (in flight)
+### v5-SFT — SFT warm-up then GRPO (FAILED silently — documented for honesty)
 
-- Adapter target: `brodie1of1/war-room-grpo-adapter-v5-sft`
-- Pipeline:
-  1. **SFT warm-up** on 355 oracle-generated multirole examples with per-task validation thresholds (`outputs/sft_dataset/train.jsonl`). Produced `brodie1of1/war-room-sft-v1` with `eval_loss=0.024`, `mean_token_accuracy=0.991` in 5.3 minutes on L40S.
-  2. **GRPO** on top of the SFT checkpoint: 100 episodes × 6 tasks, rank 32, LR 1e-5, same reward-surgery config as v4, on the **relaxed task3 verifier** (accepts `"red herring"`, `"not the root"`, `"phantom"`, etc. — 20 dismissal phrases in total).
-- Hypothesis: GRPO on the SFT checkpoint starts from a model that already emits correct multirole format and hits task3 pushback milestones. That gives GRPO successful rollouts to reinforce rather than starting from the noise floor on task3.
-- Smoke check (before launching the full run): a single SFT completion on `task3 seed=56227` hits 5 milestones including `diagnosis_pushback_bonus` at round 1. So the reward signal is live on task3 for the first time in any of our runs.
+- Adapter: `brodie1of1/war-room-grpo-adapter-v5-sft` (keep published as evidence; its metrics file is the paper trail)
+- Intended pipeline:
+  1. SFT warm-up on 355 oracle-generated multirole examples (`outputs/sft_dataset/train.jsonl`). Produced `brodie1of1/war-room-sft-v1` with `eval_loss=0.024`, `mean_token_accuracy=0.991` in 5.3 minutes on L40S. **This part worked.**
+  2. GRPO on top of the SFT checkpoint. **This part silently dropped the SFT warm-start.**
+- What broke: the GRPO loader called `model.load_state_dict(state, strict=False)` on the SFT adapter weights. PEFT saves state-dict keys as `base_model.model.model.layers.X...lora_A.weight` but a live `PeftModel` stores adapter weights in a `nn.ModuleDict({"default": ...})` — so the in-memory keys have an extra `.default.` segment: `...lora_A.default.weight`. With `strict=False`, all 392 SFT keys were reported as "unexpected" and ignored. Training ran on the base model instead of the SFT-warmed model. Task2 and task3 stuck at 0.01 throughout.
+- Fix (commit `55e71c8`): the loader now renames keys on load, inserting `.default` before `.weight` on `lora_A` / `lora_B` keys. A companion script `scripts/upcast_sft_adapter.py` zero-pads rank-16 SFT to rank-32 for GRPO when ranks differ. A pre-flight verifier `scripts/verify_sft_load.py` asserts the load succeeded.
+- Why this matters for the submission: SFT → GRPO is a published technique in the hackathon-relevant literature, and a silent key-naming mismatch between libraries is exactly the kind of bug that makes RL look dead when the issue is really load plumbing. We're leaving this run in the archive because debugging it produced the loader fix and the verification scripts that v6-SFT depends on.
+
+### v6-SFT — fixed loader, SFT warm-up, GRPO on top (in flight)
+
+- Two parallel runs with the same pipeline, different accounts:
+  - `brodie1of1/war-room-grpo-adapter-v6-sft` — backup. 200 episodes × 9 tasks, rank 32, lr 1e-5, 5h timeout.
+  - `GeminiHugger/war-room-grpo-adapter-v6-sft` — primary, owned by Lakshminath.
+- Uses the commit-`55e71c8` loader (PEFT key-rename + rank upcast).
+- Pre-flight verified: upcast script zero-pads r=16 → r=32 correctly producing 392 keys; every key matches expected PEFT format after `.default` rename; config shows r=32, lora_alpha=32.
+- Training poll on Lakshminath's run (T+60min, epoch ≈ 0.26):
+  - Avg reward climbing monotonically: 0.248 → 0.317 → 0.325 → 0.355
+  - Floor% stable/low: 36% → 33% → 26% → 29%
+  - Good% (rollouts ≥0.5) jumping: 26% → 14% → 33% → 50%
+  - **v5 lifetime avg reward was 0.195; v6-SFT at 26% epochs is already at 0.355 — 82% higher.**
+- Head-to-head eval will launch when training completes. Hero_Swap Protocol (per `.kiro/specs/hackathon-final-submission/design.md`) swaps v3 out iff v6-SFT composite delta > +0.046 AND task2 delta ≥ 0.
 
 ## Reproduction commands
 
