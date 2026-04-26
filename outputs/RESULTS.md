@@ -12,8 +12,8 @@ Composite score = average of task1/task2/task3 scripted-task eval across 5 seeds
 | v2 | Procedural-only, round-0 only | 300 | **−0.001** | − | Same shape bug, bigger budget |
 | v3 | **Multirole** structured completion | 300 | **+0.046** | **+0.140 (4×)** | Fixed train-eval alignment — first positive |
 | multirole_v2 (Lakshminath) | Multirole, 6-task mix | 800 | **+0.021** | +0.062 | More tasks = more breadth but slightly lower transfer |
-| **v4** (brodie1of1) | Multirole + reward surgery, rank 32 | 800 | _eval in flight_ | _eval in flight_ | Same codepath as multirole_v2 + penalty cap + solve bonus; task4 no longer stuck at 0.01 in training |
-| **v5-SFT** (brodie1of1) | **SFT warm-up + GRPO** with relaxed task3 | ~300 | _training in flight_ | _pending_ | SFT on 355 oracle examples lands `eval_loss=0.024`; task3 pushback should fire for the first time because SFT teaches "Redis is NOT the real issue" |
+| v4 (brodie1of1) | Multirole + reward surgery, rank 32 | 800 | **−0.007** | −0.005 | Training metrics better than multirole_v2 (mean 0.338 vs 0.263, task4 unstuck). But transfer to scripted eval was worse — broader 6-task mix seems to hurt out-of-distribution generalisation compared to v3's procedural-only curriculum. |
+| **v5-SFT** (brodie1of1) | **SFT warm-up + GRPO** with relaxed task3 | ~300 | _eval in flight_ | _pending_ | SFT on 355 oracle examples lands `eval_loss=0.024`; task3 pushback should fire for the first time because SFT teaches "Redis is NOT the real issue" |
 
 ## Current best: `v3` on the public head-to-head eval
 
