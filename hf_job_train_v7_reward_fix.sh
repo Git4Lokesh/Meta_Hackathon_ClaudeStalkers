@@ -69,7 +69,17 @@ git clone --depth 1 --branch "$BRANCH_ARG" \
     https://github.com/Git4Lokesh/Meta_Hackathon_ClaudeStalkers.git /workspace/repo
 cd /workspace/repo
 echo "HEAD: $(git log -1 --oneline)"
-echo "--- Verify reward-fix patch is present ---"
+echo "--- grader.py source-level verify (no Python deps yet) ---"
+grep -E '^(TIME_PRESSURE_PENALTY|PENALTY_CAP_FRACTION|FATAL_SCORE) = ' round2/war_room/grader.py
+
+echo "=== [2/6] Install dependencies ==="
+pip install --quiet --no-cache-dir \
+    "trl>=0.15.0,<0.19" "peft>=0.14.0" "transformers>=4.46.0,<4.50" \
+    datasets accelerate bitsandbytes \
+    fastapi pydantic uvicorn matplotlib
+pip install --quiet --no-cache-dir -e .
+
+echo "--- Verify reward-fix patch via Python import (post-install) ---"
 python - <<'PY'
 from round2.war_room.grader import (
     TIME_PRESSURE_PENALTY, PENALTY_CAP_FRACTION, FATAL_SCORE,
@@ -82,13 +92,6 @@ assert PENALTY_CAP_FRACTION == 0.10,   "v7 reward fix not applied!"
 assert FATAL_SCORE == 0.001,           "v7 reward fix not applied!"
 print("v7 reward-fix patch verified.")
 PY
-
-echo "=== [2/6] Install dependencies ==="
-pip install --quiet --no-cache-dir \
-    "trl>=0.15.0,<0.19" "peft>=0.14.0" "transformers>=4.46.0,<4.50" \
-    datasets accelerate bitsandbytes \
-    fastapi pydantic uvicorn matplotlib
-pip install --quiet --no-cache-dir -e .
 
 echo "=== [3/6] Environment info ==="
 python - <<'PY'
